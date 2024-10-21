@@ -38,51 +38,51 @@ python3 DroneID/zmq_decoder.py -z
 
 This starts the decoder, connects to the zmq server started by the receiver, and in turn offers decoded info over zmq on port 4224
 
-### Start the SniffleToTAK Proxy with the Correct ZMQ Details
+### Start DragonSync with the Correct ZMQ Details
 
 #### Without TAK Server Information (Multicast Only)
 
 ```sh
-python3 sniffletotak.py --zmq-host 0.0.0.0 --zmq-port 4224
+python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224
 ```
 
 #### With TAK Server Information
 
 ```sh
-python3 sniffletotak.py --zmq-host 0.0.0.0 --zmq-port 4224 --tak-host <tak_host> --tak-port <tak_port>
+python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224 --tak-host <tak_host> --tak-port <tak_port>
 ```
 
 #### Enable Debug Logging
 
 ```sh
-python3 sniffletotak.py --zmq-host 0.0.0.0 --zmq-port 4224 -d
+python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224 -d
 ```
 
 Replace `<tak_host>` and `<tak_port>` with the appropriate values for your setup.
 
 ### Verify Multicast Reception on ATAK
 
-Ensure that your ATAK device is connected to the same network as the machine running SniffleToTAK. If configured correctly, ATAK should receive the multicast CoT messages and display the drone information on the map.
+Ensure that your ATAK device is connected to the same network as the machine running DragonSync. If configured correctly, ATAK should receive the multicast CoT messages and display the drone information on the map.
 
 ## How It Works
 
 1. The Sniffle compatible dongle captures Bluetooth 5 long range extended packets.
 2. The captured packets are sent to the Sniffle receiver script which forwards them via ZeroMQ (ZMQ).
-3. The SniffleToTAK proxy receives the ZMQ messages and translates them into CoT format.
+3. DragonSync receives the ZMQ messages and translates them into CoT format.
 4. The CoT messages are sent to a TAK server or multicast to the network for ATAK devices to detect and monitor drones.
 
 ## Example Command
 
-To start the SniffleToTAK application with ZMQ server running on `127.0.0.1` port `4224`, sending multicast to ATAK:
+To start the DragonSync application with ZMQ server running on `127.0.0.1` port `4224`, sending multicast to ATAK:
 
 ```sh
-python3 sniffletotak.py --zmq-host 127.0.0.1 --zmq-port 4224
+python3 dragonsync.py --zmq-host 127.0.0.1 --zmq-port 4224
 ```
 
 ## Troubleshooting
 
 - **No Data on ATAK**:
-  - Ensure the ATAK device is on the same network as the SniffleToTAK machine.
+  - Ensure the ATAK device is on the same network as the DragonSync machine.
   - Verify that multicast traffic is allowed on your network.
   - Check if the correct ZMQ host and port are used.
 
