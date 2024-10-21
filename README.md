@@ -27,13 +27,13 @@ git submodule update
 ### Run the Sniffle Receiver
 
 ```sh
-python3 DroneID/python_cli/sniff_receiver.py -l -e -a -z
+python3 sniffle/python_cli/sniff_receiver.py -l -e -a -z
 ```
 
 This command configures the Sniffle dongle to look for Bluetooth 5 long range extended packets and forwards them via ZeroMQ (ZMQ).
 
 ```sh
-python3 DroneID/zmq_decoder.py -z 
+python3 zmq_decoder.py -z 
 ```
 
 This starts the decoder, connects to the zmq server started by the receiver, and in turn offers decoded info over zmq on port 4224
