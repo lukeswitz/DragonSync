@@ -1,0 +1,1 @@
+# WarDragon_Translator
