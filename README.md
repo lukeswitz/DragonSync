@@ -1,1 +1,1 @@
-# WarDragon_Translator
+# DragonSync
