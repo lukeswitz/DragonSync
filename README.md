@@ -5,7 +5,7 @@
 - Leverages DroneID [DroneID GitHub](https://github.com/alphafox02/DroneID). Thanks to bkerler
 - Supports ZeroMQ (ZMQ) for data transmission.
 - Converts ZMQ messages to Cursor on Target (CoT) format.
-- Provides integration with ATAK devices for Bluetooth Remote ID drone detection and monitoring.
+- Provides integration with ATAK devices for Bluetooth (WiFi is also possible) Remote ID drone detection and monitoring.
 
 ## Requirements
 
