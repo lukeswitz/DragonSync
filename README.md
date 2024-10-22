@@ -2,7 +2,7 @@
 
 ## Features
 
-- Leverages DroneID [DroneID GitHub](https://github.com/alphafox02/DroneID). Thanks to bkerler
+- Leverages DroneID [DroneID GitHub](https://github.com/bkerler/DroneID). Thanks to bkerler
 - Supports ZeroMQ (ZMQ) for data transmission.
 - Converts ZMQ messages to Cursor on Target (CoT) format.
 - Provides integration with ATAK devices for Bluetooth (WiFi is also possible) Remote ID drone detection and monitoring.
@@ -18,7 +18,7 @@
 ### Clone DroneID
 
 ```sh
-git clone https://github.com/alphafox02/DroneID
+git clone https://github.com/bkerler/DroneID
 cd DroneID
 git submodule init
 git submodule update
