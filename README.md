@@ -26,17 +26,19 @@ git submodule update
 
 ### Run the Sniffle Receiver
 
+This command configures the Sniffle dongle to look for Bluetooth 5 long range extended packets and forwards them via ZeroMQ (ZMQ).
+
 ```sh
 python3 sniffle/python_cli/sniff_receiver.py -l -e -a -z
 ```
 
-This command configures the Sniffle dongle to look for Bluetooth 5 long range extended packets and forwards them via ZeroMQ (ZMQ).
+### Start the Decoder
+Open another terminal window. This starts the decoder, connects to the zmq server started by the receiver, and in turn offers decoded info over zmq on port 4224
 
 ```sh
+cd DroneID
 python3 zmq_decoder.py -z 
 ```
-
-This starts the decoder, connects to the zmq server started by the receiver, and in turn offers decoded info over zmq on port 4224
 
 ### Start DragonSync with the Correct ZMQ Details
 
@@ -67,7 +69,7 @@ Ensure that your ATAK device is connected to the same network as the machine run
 ## How It Works
 
 1. The Sniffle compatible dongle captures Bluetooth 5 long range extended packets.
-2. The captured packets are sent to the Sniffle receiver script which forwards them via ZeroMQ (ZMQ).
+2. The captured packets are decoded by the decoder.
 3. DragonSync receives the ZMQ messages and translates them into CoT format.
 4. The CoT messages are sent to a TAK server or multicast to the network for ATAK devices to detect and monitor drones.
 
