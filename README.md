@@ -1,112 +1,161 @@
-# DragonSync
 
-## Features
+# DragonSync  
 
-- Leverages DroneID [DroneID GitHub](https://github.com/bkerler/DroneID). Thanks to bkerler
-- Supports ZeroMQ (ZMQ) for data transmission.
-- Converts ZMQ messages to Cursor on Target (CoT) format.
-- Provides integration with ATAK devices for Bluetooth (WiFi is also possible) Remote ID drone detection and monitoring.
+## Overview  
 
-## Requirements
+DragonSync is a powerful tool for monitoring Remote ID-compliant drones and system status, generating Cursor on Target (CoT) messages in real-time. It integrates with ATAK or other TAK clients and leverages ZeroMQ (ZMQ) for seamless data flow. Everything is pre-configured for use on the **WarDragon**, but installation on other systems is also supported with additional dependencies.
 
-- Sniffle compatible dongle
-- ATAK device
-- Python 3
+---
 
-## Setup and Usage
+## Features  
 
-### Clone DroneID
+- **Remote ID Drone Detection:**  
+   Uses [DroneID](https://github.com/bkerler/DroneID) to detect Bluetooth/Wi-Fi Remote ID signals. Thanks to @bkerler for this fantastic tool.  
+- **System Status Monitoring:**  
+   `wardragon_monitor.py` gathers hardware status (via `lm-sensors`), GPS location, and serial number.  
+- **CoT Generation:**  
+   Converts system and drone data into CoT messages.  
+- **ZMQ Support:**  
+   Uses ZMQ for communication between components.  
+- **TAK/ATAK Integration:**  
+   Supports multicast for ATAK or direct TAK server connections.  
 
-```sh
+---
+
+## Requirements  
+
+### **Pre-installed on WarDragon:**  
+If running DragonSync on the WarDragon kit, all dependencies are pre-configured, including hardware-specific sensors and GPS modules.
+
+### **For Other Systems:**  
+If you install DragonSync elsewhere, ensure the following:  
+
+- **Python 3.x**  
+- **lm-sensors**: Install via:  
+   ```bash
+   sudo apt update && sudo apt install lm-sensors
+   ```  
+- **gpsd** (GPS Daemon):  
+   ```bash
+   sudo apt install gpsd gpsd-clients
+   ```  
+- **USB GPS Module**: Ensure a working GPS connected to the system.  
+- Other necessary Python packages (listed in the `requirements.txt` or as dependencies).  
+
+---
+
+## Setup and Usage  
+
+### 1. Clone the Repositories  
+
+Clone the **DroneID** repository:  
+```bash
 git clone https://github.com/bkerler/DroneID
 cd DroneID
 git submodule init
 git submodule update
 ```
 
-### Run the Sniffle Receiver
+Clone the **DragonSync** repository:  
+```bash
+git clone <DragonSync_repo_URL>
+cd DragonSync
+```
 
-This command configures the Sniffle dongle to look for Bluetooth 5 long range extended packets and forwards them via ZeroMQ (ZMQ).
+### 2. Start the Sniffle Receiver  
 
-```sh
+This command configures the dongle to capture Bluetooth 5 long-range extended packets and sends the data via ZMQ:  
+
+```bash
 python3 sniffle/python_cli/sniff_receiver.py -l -e -a -z
 ```
 
-### Start the Decoder
-Open another terminal window. This starts the decoder, connects to the zmq server started by the receiver, and in turn offers decoded info over zmq on port 4224
+### 3. Run the ZMQ Decoder  
 
-```sh
+Open another terminal and run the decoder to process the captured packets and serve the decoded results on **port 4224**:  
+
+```bash
 cd DroneID
-python3 zmq_decoder.py -z 
+python3 zmq_decoder.py -z
 ```
 
-### Start DragonSync with the Correct ZMQ Details
+### 4. Start the WarDragon Monitor  
 
-#### Without TAK Server Information (Multicast Only)
+In a new terminal, start the `wardragon_monitor.py` script to collect system info and GPS data, serving it on **port 4225**:  
 
-```sh
-python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224
+```bash
+python3 wardragon_monitor.py --zmq_host 127.0.0.1 --zmq_port 4225 --interval 30
 ```
 
-#### With TAK Server Information
+### 5. Launch DragonSync  
 
-```sh
-python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224 --tak-host <tak_host> --tak-port <tak_port>
+#### **Without TAK Server (Multicast Only)**  
+
+```bash
+python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224 --zmq-status-port 4225
 ```
 
-#### Enable Debug Logging
+#### **With TAK Server Integration**  
 
-```sh
-python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224 -d
+```bash
+python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224 --zmq-status-port 4225 --tak-host <tak_host> --tak-port <tak_port>
 ```
 
-Replace `<tak_host>` and `<tak_port>` with the appropriate values for your setup.
+Replace `<tak_host>` and `<tak_port>` with your TAK server’s IP address and port.  
 
-### Verify Multicast Reception on ATAK
+---
 
-Ensure that your ATAK device is connected to the same network as the machine running DragonSync. If configured correctly, ATAK should receive the multicast CoT messages and display the drone information on the map.
+## How It Works  
 
-## How It Works
+1. **Sniffle Receiver:**  
+   Captures Bluetooth Remote ID packets and forwards them via ZMQ.  
 
-1. The Sniffle compatible dongle captures Bluetooth 5 long range extended packets.
-2. The captured packets are decoded by the decoder.
-3. DragonSync receives the ZMQ messages and translates them into CoT format.
-4. The CoT messages are sent to a TAK server or multicast to the network for ATAK devices to detect and monitor drones.
+2. **ZMQ Decoder:**  
+   Listens for the captured packets, decodes the data, and transmits it on **port 4224**.  
 
-## Example Command
+3. **WarDragon Monitor:**  
+   Collects system status, GPS location, and the serial number, serving this data on **port 4225**.  
 
-To start the DragonSync application with ZMQ server running on `127.0.0.1` port `4224`, sending multicast to ATAK:
+4. **DragonSync:**  
+   - Subscribes to ZMQ feeds on **ports 4224** and **4225**.  
+   - Converts incoming data into **CoT messages**.  
+   - Sends CoT messages to a TAK server or multicasts them to the network for ATAK clients.  
 
-```sh
-python3 dragonsync.py --zmq-host 127.0.0.1 --zmq-port 4224
+---
+
+## Example Command  
+
+To start DragonSync using ZMQ on ports 4224 and 4225:  
+
+```bash
+python3 dragonsync.py --zmq-host 127.0.0.1 --zmq-port 4224 --zmq-status-port 4225
 ```
 
-## Troubleshooting
+---
 
-- **No Data on ATAK**:
-  - Ensure the ATAK device is on the same network as the DragonSync machine.
-  - Verify that multicast traffic is allowed on your network.
-  - Check if the correct ZMQ host and port are used.
+## Troubleshooting  
 
-- **Debugging**:
-  - Use the `-d` flag to enable debug logging for more detailed output.
-  - Use network monitoring tools like Wireshark to verify multicast traffic.
+### **No Data on ATAK?**  
+- Ensure ATAK and DragonSync are on the **same network**.  
+- Verify **multicast traffic** is enabled on your network.  
+- Confirm that the correct **ZMQ host and port** are specified.  
 
-## License
+### **Debugging Tips:**  
+- Use the `-d` flag with DragonSync for **debug logging**.  
+- Use **Wireshark** to verify multicast traffic.  
 
-```
-MIT License
+---
 
-© 2024 cemaxecuter
+## License  
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+```text
+MIT License  
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+© 2024 cemaxecuter  
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
