@@ -3,7 +3,7 @@ Description=Sniff Receiver Service
 
 [Service]
 ExecStart=/usr/bin/python3 /home/dragon/WarDragon/DroneID/sniffle/python_cli/sniff_receiver.py -z -a -l -e
-WorkingDirectory=/home/dragon/WarDragon/DroneID/sniffle/python_cli/
+WorkingDirectory=/home/dragon/WarDragon/DroneID/
 Restart=always
 User=dragon
 
