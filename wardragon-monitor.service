@@ -3,7 +3,7 @@ Description=WarDragon System Monitor Service
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/dragon/WarDragon/DragonSync/wardragon_monitor.py --interval 30
+ExecStart=/usr/bin/python3 /home/dragon/WarDragon/DragonSync/wardragon_monitor.py --zmq_host 127.0.0.1 --zmq_port 4225 --interval 30
 Restart=always
 User=root
 Group=root
