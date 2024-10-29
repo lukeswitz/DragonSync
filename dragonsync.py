@@ -43,6 +43,9 @@ import zmq
 from lxml import etree
 import xml.sax.saxutils
 
+from cryptography.hazmat.primitives.serialization import pkcs12
+from cryptography.hazmat.primitives import serialization
+
 from tak_client import TAKClient
 from tak_udp_client import TAKUDPClient
 from drone import Drone
@@ -82,19 +85,19 @@ def setup_tls_context(tak_tls_p12: str, tak_tls_p12_pass: Optional[str], tak_tls
     p12_pass = tak_tls_p12_pass.encode() if tak_tls_p12_pass else None
 
     try:
-        key, cert, more_certs = cryptography.hazmat.primitives.serialization.pkcs12.load_key_and_certificates(p12_data, p12_pass)
+        key, cert, more_certs = pkcs12.load_key_and_certificates(p12_data, p12_pass)
     except Exception as err:
         logger.critical("Failed to load TAK server TLS PKCS#12: %s.", err)
         sys.exit(1)
 
     key_bytes = key.private_bytes(
-        cryptography.hazmat.primitives.serialization.Encoding.PEM,
-        cryptography.hazmat.primitives.serialization.PrivateFormat.TraditionalOpenSSL,
-        cryptography.hazmat.primitives.serialization.NoEncryption() if not p12_pass else cryptography.hazmat.primitives.serialization.BestAvailableEncryption(p12_pass)
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption() if not p12_pass else serialization.BestAvailableEncryption(p12_pass)
     )
-    cert_bytes = cert.public_bytes(cryptography.hazmat.primitives.serialization.Encoding.PEM)
+    cert_bytes = cert.public_bytes(serialization.Encoding.PEM)
     ca_bytes = b"".join(
-        cert.public_bytes(cryptography.hazmat.primitives.serialization.Encoding.PEM) for cert in more_certs
+        cert.public_bytes(serialization.Encoding.PEM) for cert in more_certs
     ) if more_certs else b""
 
     # Create temporary files and ensure they are deleted on exit
