@@ -325,77 +325,81 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
                     logger.debug("No TAK host/port or multicast address/port provided. Skipping sending CoT message.")
 
             drone_manager.send_updates(tak_client, tak_udp_client, tak_host, tak_port, enable_multicast, multicast_address, multicast_port)
+    except Exception as e:
+        logger.error(f"An error occurred in zmq_to_cot: {e}")
+    except KeyboardInterrupt:
+        signal_handler(None, None)
 
-    if __name__ == "__main__":
-        parser = argparse.ArgumentParser(description="ZMQ to CoT converter.")
-        parser.add_argument("--config", type=str, help="Path to config file", default="config.ini")
-        parser.add_argument("--zmq-host", help="ZMQ server host")
-        parser.add_argument("--zmq-port", type=int, help="ZMQ server port for telemetry")
-        parser.add_argument("--zmq-status-port", type=int, help="ZMQ server port for system status")
-        parser.add_argument("--tak-host", type=str, help="TAK server hostname or IP address (optional)")
-        parser.add_argument("--tak-port", type=int, help="TAK server port (optional)")
-        parser.add_argument("--tak-protocol", type=str, choices=['TCP', 'UDP'], help="TAK server communication protocol (TCP or UDP)")
-        parser.add_argument("--tak-tls-p12", type=str, help="Path to TAK server TLS PKCS#12 file (optional, for TCP)")
-        parser.add_argument("--tak-tls-p12-pass", type=str, help="Password for TAK server TLS PKCS#12 file (optional, for TCP)")
-        parser.add_argument("--tak-tls-skip-verify", action="store_true", help="(UNSAFE) Disable TLS server verification")
-        parser.add_argument("--tak-multicast-addr", type=str, help="TAK multicast address (optional)")
-        parser.add_argument("--tak-multicast-port", type=int, help="TAK multicast port (optional)")
-        parser.add_argument("--enable-multicast", action="store_true", help="Enable sending to multicast address")
-        parser.add_argument("--rate-limit", type=float, help="Rate limit for sending CoT messages (seconds)")
-        parser.add_argument("--max-drones", type=int, help="Maximum number of drones to track simultaneously")
-        parser.add_argument("--inactivity-timeout", type=float, help="Time in seconds before a drone is considered inactive")
-        parser.add_argument("-d", "--debug", action="store_true", help="Enable debug logging")
-        args = parser.parse_args()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="ZMQ to CoT converter.")
+    parser.add_argument("--config", type=str, help="Path to config file", default="config.ini")
+    parser.add_argument("--zmq-host", help="ZMQ server host")
+    parser.add_argument("--zmq-port", type=int, help="ZMQ server port for telemetry")
+    parser.add_argument("--zmq-status-port", type=int, help="ZMQ server port for system status")
+    parser.add_argument("--tak-host", type=str, help="TAK server hostname or IP address (optional)")
+    parser.add_argument("--tak-port", type=int, help="TAK server port (optional)")
+    parser.add_argument("--tak-protocol", type=str, choices=['TCP', 'UDP'], help="TAK server communication protocol (TCP or UDP)")
+    parser.add_argument("--tak-tls-p12", type=str, help="Path to TAK server TLS PKCS#12 file (optional, for TCP)")
+    parser.add_argument("--tak-tls-p12-pass", type=str, help="Password for TAK server TLS PKCS#12 file (optional, for TCP)")
+    parser.add_argument("--tak-tls-skip-verify", action="store_true", help="(UNSAFE) Disable TLS server verification")
+    parser.add_argument("--tak-multicast-addr", type=str, help="TAK multicast address (optional)")
+    parser.add_argument("--tak-multicast-port", type=int, help="TAK multicast port (optional)")
+    parser.add_argument("--enable-multicast", action="store_true", help="Enable sending to multicast address")
+    parser.add_argument("--rate-limit", type=float, help="Rate limit for sending CoT messages (seconds)")
+    parser.add_argument("--max-drones", type=int, help="Maximum number of drones to track simultaneously")
+    parser.add_argument("--inactivity-timeout", type=float, help="Time in seconds before a drone is considered inactive")
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug logging")
+    args = parser.parse_args()
 
-        # Load config file if provided
-        config_values = {}
-        if args.config:
-            config_values = load_config(args.config)
+    # Load config file if provided
+    config_values = {}
+    if args.config:
+        config_values = load_config(args.config)
 
-        setup_logging(args.debug)
-        logger.info("Starting ZMQ to CoT converter with log level: %s", "DEBUG" if args.debug else "INFO")
+    setup_logging(args.debug)
+    logger.info("Starting ZMQ to CoT converter with log level: %s", "DEBUG" if args.debug else "INFO")
 
-        # Assign configuration values, giving precedence to command-line arguments
-        config = {
-            "zmq_host": args.zmq_host if args.zmq_host is not None else get_str(config_values.get("zmq_host", "127.0.0.1")),
-            "zmq_port": args.zmq_port if args.zmq_port is not None else get_int(config_values.get("zmq_port"), 4224),
-            "zmq_status_port": args.zmq_status_port if args.zmq_status_port is not None else get_int(config_values.get("zmq_status_port"), None),
-            "tak_host": args.tak_host if args.tak_host is not None else get_str(config_values.get("tak_host")),
-            "tak_port": args.tak_port if args.tak_port is not None else get_int(config_values.get("tak_port"), None),
-            "tak_protocol": args.tak_protocol.upper() if args.tak_protocol is not None else get_str(config_values.get("tak_protocol", "TCP")).upper(),
-            "tak_tls_p12": args.tak_tls_p12 if args.tak_tls_p12 is not None else get_str(config_values.get("tak_tls_p12")),
-            "tak_tls_p12_pass": args.tak_tls_p12_pass if args.tak_tls_p12_pass is not None else get_str(config_values.get("tak_tls_p12_pass")),
-            "tak_tls_skip_verify": args.tak_tls_skip_verify if args.tak_tls_skip_verify else get_bool(config_values.get("tak_tls_skip_verify"), False),
-            "tak_multicast_addr": args.tak_multicast_addr if args.tak_multicast_addr is not None else get_str(config_values.get("tak_multicast_addr")),
-            "tak_multicast_port": args.tak_multicast_port if args.tak_multicast_port is not None else get_int(config_values.get("tak_multicast_port"), None),
-            "enable_multicast": args.enable_multicast or get_bool(config_values.get("enable_multicast"), False),
-            "rate_limit": args.rate_limit if args.rate_limit is not None else get_float(config_values.get("rate_limit", 1.0)),
-            "max_drones": args.max_drones if args.max_drones is not None else get_int(config_values.get("max_drones", 30)),
-            "inactivity_timeout": args.inactivity_timeout if args.inactivity_timeout is not None else get_float(config_values.get("inactivity_timeout", 60.0)),
-        }
+    # Assign configuration values, giving precedence to command-line arguments
+    config = {
+        "zmq_host": args.zmq_host if args.zmq_host is not None else get_str(config_values.get("zmq_host", "127.0.0.1")),
+        "zmq_port": args.zmq_port if args.zmq_port is not None else get_int(config_values.get("zmq_port"), 4224),
+        "zmq_status_port": args.zmq_status_port if args.zmq_status_port is not None else get_int(config_values.get("zmq_status_port"), None),
+        "tak_host": args.tak_host if args.tak_host is not None else get_str(config_values.get("tak_host")),
+        "tak_port": args.tak_port if args.tak_port is not None else get_int(config_values.get("tak_port"), None),
+        "tak_protocol": args.tak_protocol.upper() if args.tak_protocol is not None else get_str(config_values.get("tak_protocol", "TCP")).upper(),
+        "tak_tls_p12": args.tak_tls_p12 if args.tak_tls_p12 is not None else get_str(config_values.get("tak_tls_p12")),
+        "tak_tls_p12_pass": args.tak_tls_p12_pass if args.tak_tls_p12_pass is not None else get_str(config_values.get("tak_tls_p12_pass")),
+        "tak_tls_skip_verify": args.tak_tls_skip_verify if args.tak_tls_skip_verify else get_bool(config_values.get("tak_tls_skip_verify"), False),
+        "tak_multicast_addr": args.tak_multicast_addr if args.tak_multicast_addr is not None else get_str(config_values.get("tak_multicast_addr")),
+        "tak_multicast_port": args.tak_multicast_port if args.tak_multicast_port is not None else get_int(config_values.get("tak_multicast_port"), None),
+        "enable_multicast": args.enable_multicast or get_bool(config_values.get("enable_multicast"), False),
+        "rate_limit": args.rate_limit if args.rate_limit is not None else get_float(config_values.get("rate_limit", 1.0)),
+        "max_drones": args.max_drones if args.max_drones is not None else get_int(config_values.get("max_drones", 30)),
+        "inactivity_timeout": args.inactivity_timeout if args.inactivity_timeout is not None else get_float(config_values.get("inactivity_timeout", 60.0)),
+    }
 
-        # Validate configuration
-        validate_config(config)
+    # Validate configuration
+    validate_config(config)
 
-        # Setup TLS context
-        tak_tls_context = setup_tls_context(
-            tak_tls_p12=config["tak_tls_p12"],
-            tak_tls_p12_pass=config["tak_tls_p12_pass"],
-            tak_tls_skip_verify=config["tak_tls_skip_verify"]
-        ) if config["tak_protocol"] == 'TCP' and config["tak_tls_p12"] else None
+    # Setup TLS context
+    tak_tls_context = setup_tls_context(
+        tak_tls_p12=config["tak_tls_p12"],
+        tak_tls_p12_pass=config["tak_tls_p12_pass"],
+        tak_tls_skip_verify=config["tak_tls_skip_verify"]
+    ) if config["tak_protocol"] == 'TCP' and config["tak_tls_p12"] else None
 
-        zmq_to_cot(
-            zmq_host=config["zmq_host"],
-            zmq_port=config["zmq_port"],
-            zmq_status_port=config["zmq_status_port"],
-            tak_host=config["tak_host"],
-            tak_port=config["tak_port"],
-            tak_tls_context=tak_tls_context,
-            tak_protocol=config["tak_protocol"],
-            multicast_address=config["tak_multicast_addr"],
-            multicast_port=config["tak_multicast_port"],
-            enable_multicast=config["enable_multicast"],
-            rate_limit=config["rate_limit"],
-            max_drones=config["max_drones"],
-            inactivity_timeout=config["inactivity_timeout"]
-        )
+    zmq_to_cot(
+        zmq_host=config["zmq_host"],
+        zmq_port=config["zmq_port"],
+        zmq_status_port=config["zmq_status_port"],
+        tak_host=config["tak_host"],
+        tak_port=config["tak_port"],
+        tak_tls_context=tak_tls_context,
+        tak_protocol=config["tak_protocol"],
+        multicast_address=config["tak_multicast_addr"],
+        multicast_port=config["tak_multicast_port"],
+        enable_multicast=config["enable_multicast"],
+        rate_limit=config["rate_limit"],
+        max_drones=config["max_drones"],
+        inactivity_timeout=config["inactivity_timeout"]
+    )
