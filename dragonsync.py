@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-
 import sys
 import ssl
 import socket
@@ -330,6 +329,7 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
     except KeyboardInterrupt:
         signal_handler(None, None)
 
+# Configuration and Execution
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ZMQ to CoT converter.")
     parser.add_argument("--config", type=str, help="Path to config file", default="config.ini")
@@ -359,14 +359,30 @@ if __name__ == "__main__":
     setup_logging(args.debug)
     logger.info("Starting ZMQ to CoT converter with log level: %s", "DEBUG" if args.debug else "INFO")
 
+    # Retrieve 'tak_host' and 'tak_port' with precedence
+    tak_host = args.tak_host if args.tak_host is not None else get_str(config_values.get("tak_host"))
+    tak_port = args.tak_port if args.tak_port is not None else get_int(config_values.get("tak_port"), None)
+
+    if tak_host and tak_port:
+        # Fetch the raw protocol value from command-line or config
+        tak_protocol_raw = args.tak_protocol if args.tak_protocol is not None else config_values.get("tak_protocol")
+        # Use get_str to sanitize the input, defaulting to "TCP" if necessary
+        tak_protocol_sanitized = get_str(tak_protocol_raw, "TCP")
+        # Convert to uppercase
+        tak_protocol = tak_protocol_sanitized.upper()
+    else:
+        # If TAK host and port are not provided, set tak_protocol to None
+        tak_protocol = None
+        logger.info("TAK host and port not provided. 'tak_protocol' will be ignored.")
+
     # Assign configuration values, giving precedence to command-line arguments
     config = {
         "zmq_host": args.zmq_host if args.zmq_host is not None else get_str(config_values.get("zmq_host", "127.0.0.1")),
         "zmq_port": args.zmq_port if args.zmq_port is not None else get_int(config_values.get("zmq_port"), 4224),
         "zmq_status_port": args.zmq_status_port if args.zmq_status_port is not None else get_int(config_values.get("zmq_status_port"), None),
-        "tak_host": args.tak_host if args.tak_host is not None else get_str(config_values.get("tak_host")),
-        "tak_port": args.tak_port if args.tak_port is not None else get_int(config_values.get("tak_port"), None),
-        "tak_protocol": args.tak_protocol.upper() if args.tak_protocol is not None else get_str(config_values.get("tak_protocol", "TCP")).upper(),
+        "tak_host": tak_host,
+        "tak_port": tak_port,
+        "tak_protocol": tak_protocol,
         "tak_tls_p12": args.tak_tls_p12 if args.tak_tls_p12 is not None else get_str(config_values.get("tak_tls_p12")),
         "tak_tls_p12_pass": args.tak_tls_p12_pass if args.tak_tls_p12_pass is not None else get_str(config_values.get("tak_tls_p12_pass")),
         "tak_tls_skip_verify": args.tak_tls_skip_verify if args.tak_tls_skip_verify else get_bool(config_values.get("tak_tls_skip_verify"), False),
@@ -379,9 +395,13 @@ if __name__ == "__main__":
     }
 
     # Validate configuration
-    validate_config(config)
+    try:
+        validate_config(config)
+    except ValueError as ve:
+        logger.critical(f"Configuration Error: {ve}")
+        sys.exit(1)
 
-    # Setup TLS context
+    # Setup TLS context only if tak_protocol is set (which implies tak_host and tak_port are provided)
     tak_tls_context = setup_tls_context(
         tak_tls_p12=config["tak_tls_p12"],
         tak_tls_p12_pass=config["tak_tls_p12_pass"],
