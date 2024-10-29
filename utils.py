@@ -110,48 +110,45 @@ def validate_config(config: Dict[str, Any]):
     if not (1 <= zmq_port <= 65535):
         raise ValueError(f"Invalid ZMQ port: {zmq_port}. Must be between 1 and 65535.")
 
-    # Validate TAK port if provided
+    # Retrieve TAK configurations
+    tak_host = get_str(config.get('tak_host'))
     tak_port = get_int(config.get('tak_port'))
-    if tak_port is not None and not (1 <= tak_port <= 65535):
-        raise ValueError(f"Invalid TAK port: {tak_port}. Must be between 1 and 65535.")
-
-    # Validate TAK protocol
     tak_protocol = get_str(config.get('tak_protocol', 'TCP')).upper()
-    if tak_protocol not in ('TCP', 'UDP'):
-        raise ValueError(f"Invalid TAK protocol: {tak_protocol}. Must be either 'TCP' or 'UDP'.")
-    config['tak_protocol'] = tak_protocol  # Normalize value
 
-    # Validate multicast address if enable_multicast is True
+    if tak_host and tak_port:
+        # Validate TAK protocol
+        if not tak_protocol:
+            raise ValueError("Configuration 'tak_protocol' is required when 'tak_host' and 'tak_port' are provided.")
+        if tak_protocol not in ('TCP', 'UDP'):
+            raise ValueError(f"Invalid TAK protocol: {tak_protocol}. Must be either 'TCP' or 'UDP'.")
+        config['tak_protocol'] = tak_protocol  # Normalize value
+
+        # Validate TAK protocol-specific configurations
+        if tak_protocol == 'TCP':
+            tak_tls_p12 = config.get('tak_tls_p12')
+            tak_tls_p12_pass = config.get('tak_tls_p12_pass')
+            if not tak_tls_p12 or not tak_tls_p12_pass:
+                raise ValueError("TAK protocol is set to TCP but 'tak_tls_p12' or 'tak_tls_p12_pass' is missing.")
+        elif tak_protocol == 'UDP':
+            # For UDP, tak_tls_p12 and tak_tls_p12_pass should not be set
+            if config.get('tak_tls_p12') or config.get('tak_tls_p12_pass'):
+                logger.warning("TAK protocol is set to UDP. 'tak_tls_p12' and 'tak_tls_p12_pass' will be ignored.")
+    else:
+        # If tak_host and tak_port are not both provided, ignore tak_protocol
+        config['tak_protocol'] = None
+
+    # Validate multicast configurations if enabled
     enable_multicast = get_bool(config.get('enable_multicast', False))
     if enable_multicast:
-        multicast_address = config.get('tak_multicast_addr')
+        multicast_address = get_str(config.get('tak_multicast_addr'))
         multicast_port = get_int(config.get('tak_multicast_port'))
         if not multicast_address or not multicast_port:
             raise ValueError("Multicast is enabled but 'tak_multicast_addr' or 'tak_multicast_port' is missing.")
+        config['enable_multicast'] = True
+    else:
+        config['enable_multicast'] = False
 
-    # Additional Validations Based on TAK Protocol
-    if tak_protocol == 'TCP':
-        tak_tls_p12 = config.get('tak_tls_p12')
-        tak_tls_p12_pass = config.get('tak_tls_p12_pass')
-        if not tak_tls_p12 or not tak_tls_p12_pass:
-            raise ValueError("TAK protocol is set to TCP but 'tak_tls_p12' or 'tak_tls_p12_pass' is missing.")
-    elif tak_protocol == 'UDP':
-        # For UDP, tak_tls_p12 and tak_tls_p12_pass should not be set
-        if config.get('tak_tls_p12') or config.get('tak_tls_p12_pass'):
-            logger.warning("TAK protocol is set to UDP. 'tak_tls_p12' and 'tak_tls_p12_pass' will be ignored.")
-
-    # Validate TAK host and port presence if either is provided
-    tak_host = get_str(config.get('tak_host'))
-    tak_port = get_int(config.get('tak_port'))
+    # Ensure consistency between tak_host and tak_port
     if (tak_host and not tak_port) or (tak_port and not tak_host):
         raise ValueError("Both 'tak_host' and 'tak_port' must be provided together.")
 
-    # Validate multicast configurations if enable_multicast is True
-    if enable_multicast:
-        if not config.get('tak_multicast_addr'):
-            raise ValueError("'tak_multicast_addr' is required when multicast is enabled.")
-        if not config.get('tak_multicast_port'):
-            raise ValueError("'tak_multicast_port' is required when multicast is enabled.")
-
-    # Update enable_multicast to ensure it's a boolean
-    config['enable_multicast'] = enable_multicast
