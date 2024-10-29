@@ -23,46 +23,102 @@ SOFTWARE.
 """
 
 
+from typing import Optional, Dict, Any
 import configparser
 import logging
 import sys
 
 logger = logging.getLogger(__name__)
 
-def load_config(file_path: str) -> dict:
-    """Load configurations from a file."""
+def load_config(config_path: str) -> Dict[str, Any]:
+    """
+    Loads the configuration from the specified INI file.
+    Returns a dictionary of configuration values.
+    """
     config = configparser.ConfigParser()
-    config.read(file_path)
-    config_dict = {}
-    if 'SETTINGS' in config:
-        config_dict.update(config['SETTINGS'])
-    return config_dict
+    try:
+        config.read(config_path)
+        # Assuming configurations are under the 'SETTINGS' section
+        if 'SETTINGS' in config:
+            return dict(config['SETTINGS'])
+        else:
+            logger.warning(f"No 'SETTINGS' section found in {config_path}. Using empty configuration.")
+            return {}
+    except Exception as e:
+        logger.critical(f"Failed to load configuration file {config_path}: {e}")
+        sys.exit(1)
 
-def validate_config(config: dict):
-    """Validates the configuration parameters."""
-    required_keys = ['zmq_host', 'zmq_port']
+def get_str(value: Optional[Any], default: str = "") -> str:
+    """
+    Safely converts a value to a string. If the value is None or empty, returns the default.
+    """
+    if value is None:
+        return default
+    value = str(value).strip()
+    return value if value else default
+
+def get_int(value: Optional[Any], default: Optional[int] = None) -> Optional[int]:
+    """
+    Safely converts a value to an integer. If conversion fails or value is None, returns the default.
+    """
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+def get_float(value: Optional[Any], default: float = 0.0) -> float:
+    """
+    Safely converts a value to a float. If conversion fails or value is None, returns the default.
+    """
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+def get_bool(value: Optional[Any], default: bool = False) -> bool:
+    """
+    Safely converts a value to a boolean. If conversion fails or value is None, returns the default.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        value_str = value.strip().lower()
+        if value_str in ['true', 'yes', '1']:
+            return True
+        elif value_str in ['false', 'no', '0']:
+            return False
+    return default
+
+def validate_config(config: Dict[str, Any]):
+    """
+    Validates the configuration dictionary.
+    Raises ValueError if any required configuration is invalid.
+    """
+    required_keys = ["zmq_host", "zmq_port"]
     for key in required_keys:
-        if key not in config:
-            logger.critical(f"Missing required configuration key: {key}")
-            sys.exit(1)
+        if key not in config or not config[key]:
+            raise ValueError(f"Configuration '{key}' is required and cannot be empty.")
 
     # Validate ZMQ port
     zmq_port = get_int(config.get('zmq_port'))
     if not (1 <= zmq_port <= 65535):
-        logger.critical(f"Invalid ZMQ port: {zmq_port}. Must be between 1 and 65535.")
-        sys.exit(1)
+        raise ValueError(f"Invalid ZMQ port: {zmq_port}. Must be between 1 and 65535.")
 
     # Validate TAK port if provided
     tak_port = get_int(config.get('tak_port'))
     if tak_port is not None and not (1 <= tak_port <= 65535):
-        logger.critical(f"Invalid TAK port: {tak_port}. Must be between 1 and 65535.")
-        sys.exit(1)
+        raise ValueError(f"Invalid TAK port: {tak_port}. Must be between 1 and 65535.")
 
     # Validate TAK protocol
-    tak_protocol = config.get('tak_protocol', 'TCP').upper()
+    tak_protocol = get_str(config.get('tak_protocol', 'TCP')).upper()
     if tak_protocol not in ('TCP', 'UDP'):
-        logger.critical(f"Invalid TAK protocol: {tak_protocol}. Must be either 'TCP' or 'UDP'.")
-        sys.exit(1)
+        raise ValueError(f"Invalid TAK protocol: {tak_protocol}. Must be either 'TCP' or 'UDP'.")
     config['tak_protocol'] = tak_protocol  # Normalize value
 
     # Validate multicast address if enable_multicast is True
@@ -71,47 +127,31 @@ def validate_config(config: dict):
         multicast_address = config.get('tak_multicast_addr')
         multicast_port = get_int(config.get('tak_multicast_port'))
         if not multicast_address or not multicast_port:
-            logger.critical("Multicast is enabled but multicast_address or multicast_port is missing.")
-            sys.exit(1)
+            raise ValueError("Multicast is enabled but 'tak_multicast_addr' or 'tak_multicast_port' is missing.")
 
     # Additional Validations Based on TAK Protocol
-    if config['tak_protocol'] == 'TCP':
+    if tak_protocol == 'TCP':
         tak_tls_p12 = config.get('tak_tls_p12')
         tak_tls_p12_pass = config.get('tak_tls_p12_pass')
         if not tak_tls_p12 or not tak_tls_p12_pass:
-            logger.critical("TAK protocol is set to TCP but tak_tls_p12 or tak_tls_p12_pass is missing.")
-            sys.exit(1)
-    elif config['tak_protocol'] == 'UDP':
+            raise ValueError("TAK protocol is set to TCP but 'tak_tls_p12' or 'tak_tls_p12_pass' is missing.")
+    elif tak_protocol == 'UDP':
         # For UDP, tak_tls_p12 and tak_tls_p12_pass should not be set
         if config.get('tak_tls_p12') or config.get('tak_tls_p12_pass'):
-            logger.warning("TAK protocol is set to UDP. tak_tls_p12 and tak_tls_p12_pass will be ignored.")
+            logger.warning("TAK protocol is set to UDP. 'tak_tls_p12' and 'tak_tls_p12_pass' will be ignored.")
 
-def get_str(value):
-    """Returns the stripped string if not empty, else None."""
-    if value is not None:
-        value = value.strip()
-        if value:
-            return value
-    return None
+    # Validate TAK host and port presence if either is provided
+    tak_host = get_str(config.get('tak_host'))
+    tak_port = get_int(config.get('tak_port'))
+    if (tak_host and not tak_port) or (tak_port and not tak_host):
+        raise ValueError("Both 'tak_host' and 'tak_port' must be provided together.")
 
-def get_int(value, default=None):
-    """Safely converts a value to an integer, returning default if conversion fails."""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+    # Validate multicast configurations if enable_multicast is True
+    if enable_multicast:
+        if not config.get('tak_multicast_addr'):
+            raise ValueError("'tak_multicast_addr' is required when multicast is enabled.")
+        if not config.get('tak_multicast_port'):
+            raise ValueError("'tak_multicast_port' is required when multicast is enabled.")
 
-def get_float(value, default=None):
-    """Safely converts a value to a float, returning default if conversion fails."""
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-def get_bool(value, default=False):
-    """Safely converts a value to a boolean."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ('true', 'yes', '1')
-    return default
+    # Update enable_multicast to ensure it's a boolean
+    config['enable_multicast'] = enable_multicast
