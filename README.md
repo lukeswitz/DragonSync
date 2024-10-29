@@ -58,7 +58,7 @@ git submodule update
 
 Clone the **DragonSync** repository:  
 ```bash
-git clone https://github.com/alphafox02/DragonSync/tree/modular_design
+git clone https://github.com/alphafox02/DragonSync/
 ```
 
 ### 2. Start the Sniffle Receiver  
