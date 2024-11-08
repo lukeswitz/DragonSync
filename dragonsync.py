@@ -49,8 +49,8 @@ from tak_client import TAKClient
 from tak_udp_client import TAKUDPClient
 from drone import Drone
 from system_status import SystemStatus
-from manager import DroneManager
-from utils import load_config, validate_config, get_str, get_int, get_float, get_bool, send_udp_multicast
+from manager import DroneManager, send_to_tak_udp_multicast
+from utils import load_config, validate_config, get_str, get_int, get_float, get_bool
 
 # Setup logging
 def setup_logging(debug: bool):
@@ -318,7 +318,7 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
                     tak_udp_client.send(cot_xml)
                     logger.info(f"Sent CoT message to TAK server via UDP at {tak_host}:{tak_port}")
                 elif enable_multicast and multicast_address and multicast_port:
-                    send_udp_multicast(cot_xml, multicast_address, multicast_port)
+                    send_to_tak_udp_multicast(cot_xml, multicast_address, multicast_port)
                     logger.info(f"Sent CoT message to multicast address {multicast_address}:{multicast_port}")
                 else:
                     logger.debug("No TAK host/port or multicast address/port provided. Skipping sending CoT message.")
