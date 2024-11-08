@@ -96,32 +96,49 @@ def get_bool(value: Optional[Any], default: bool = False) -> bool:
             return False
     return default
 
-def send_to_tak_udp_multicast(message: Union[str, bytes], multicast_address: str, multicast_port: int):
+def send_udp_multicast(message: Union[str, bytes], multicast_address: str = '239.2.3.1', multicast_port: int = 6969):
     """
     Sends a message to a TAK UDP multicast address.
-    Accepts both str and bytes types for the message.
+    
+    Args:
+        message (str or bytes): The CoT XML payload to send.
+        multicast_address (str): The multicast IP address. Default is '239.2.3.1'.
+        multicast_port (int): The multicast port. Default is 6969.
     """
-    sock = None  # Initialize sock to None
     try:
+        # Ensure the message is in bytes
         if isinstance(message, str):
             message_bytes = message.encode('utf-8')
+            logging.debug("Message encoded to bytes using UTF-8.")
         elif isinstance(message, bytes):
             message_bytes = message
+            logging.debug("Message is already in bytes.")
         else:
-            logger.error(f"Unsupported message type: {type(message)}. Must be 'str' or 'bytes'.")
+            logging.error(f"Unsupported message type: {type(message)}. Must be 'str' or 'bytes'.")
             return
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        # Set Time-to-Live (TTL) to 2 to allow multicast packets to be routed beyond the local network
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-        # Send the message
-        sock.sendto(message_bytes, (multicast_address, multicast_port))
-        logger.debug(f"Sent multicast message to {multicast_address}:{multicast_port}")
+        # Create a UDP socket for multicast
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as udp_socket:
+            logging.debug("UDP socket created for multicast.")
+
+            # Set Time-to-Live (TTL) to 1 to restrict packets to the local network
+            ttl = struct.pack('b', 1)
+            udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+            logging.debug(f"Multicast TTL set to 1 for address {multicast_address}:{multicast_port}.")
+
+            # Optionally, enable multicast loopback for testing (receives your own multicast messages)
+            # loop = struct.pack('b', 1)
+            # udp_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, loop)
+            # logging.debug("Multicast loopback enabled.")
+
+            # Send the multicast message
+            udp_socket.sendto(message_bytes, (multicast_address, multicast_port))
+            logging.info(f"CoT XML Payload sent to multicast endpoint {multicast_address}:{multicast_port}.")
+
+    except socket.error as e:
+        logging.error(f"Socket error while sending multicast message: {e}")
     except Exception as e:
-        logger.error(f"Failed to send multicast message: {e}")
-    finally:
-        if sock:
-            sock.close()  # Only close if sock was successfully created
+        logging.error(f"Unexpected error in send_tak_multicast: {e}")
 
 
 def validate_config(config: Dict[str, Any]):
