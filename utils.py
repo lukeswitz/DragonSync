@@ -23,10 +23,11 @@ SOFTWARE.
 """
 
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 import configparser
 import logging
 import sys
+import socket 
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,34 @@ def get_bool(value: Optional[Any], default: bool = False) -> bool:
             return False
     return default
 
+def send_to_tak_udp_multicast(message: Union[str, bytes], multicast_address: str, multicast_port: int):
+    """
+    Sends a message to a TAK UDP multicast address.
+    Accepts both str and bytes types for the message.
+    """
+    sock = None  # Initialize sock to None
+    try:
+        if isinstance(message, str):
+            message_bytes = message.encode('utf-8')
+        elif isinstance(message, bytes):
+            message_bytes = message
+        else:
+            logger.error(f"Unsupported message type: {type(message)}. Must be 'str' or 'bytes'.")
+            return
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        # Set Time-to-Live (TTL) to 2 to allow multicast packets to be routed beyond the local network
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        # Send the message
+        sock.sendto(message_bytes, (multicast_address, multicast_port))
+        logger.debug(f"Sent multicast message to {multicast_address}:{multicast_port}")
+    except Exception as e:
+        logger.error(f"Failed to send multicast message: {e}")
+    finally:
+        if sock:
+            sock.close()  # Only close if sock was successfully created
+
+
 def validate_config(config: Dict[str, Any]):
     """
     Validates the configuration dictionary.
@@ -151,4 +180,3 @@ def validate_config(config: Dict[str, Any]):
     # Ensure consistency between tak_host and tak_port
     if (tak_host and not tak_port) or (tak_port and not tak_host):
         raise ValueError("Both 'tak_host' and 'tak_port' must be provided together.")
-
