@@ -1,26 +1,4 @@
-"""
-MIT License
-
-Copyright (c) 2024 cemaxecuter
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-"""
+# main.py
 
 import sys
 import ssl
@@ -49,7 +27,8 @@ from tak_client import TAKClient
 from tak_udp_client import TAKUDPClient
 from drone import Drone
 from system_status import SystemStatus
-from manager import DroneManager, send_to_tak_udp_multicast
+from manager import DroneManager
+from messaging import CotMessenger
 from utils import load_config, validate_config, get_str, get_int, get_float, get_bool
 
 # Setup logging
@@ -157,8 +136,6 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
         status_socket = None
         logger.debug("No ZMQ status port provided. Skipping status socket setup.")
 
-    drone_manager = DroneManager(max_drones=max_drones, rate_limit=rate_limit, inactivity_timeout=inactivity_timeout)
-
     # Initialize TAK clients based on protocol
     tak_client = None
     tak_udp_client = None
@@ -173,6 +150,23 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
             logger.critical(f"Unsupported TAK protocol: {tak_protocol}. Must be 'TCP' or 'UDP'.")
             sys.exit(1)
 
+    # Initialize CotMessenger
+    cot_messenger = CotMessenger(
+        tak_client=tak_client,
+        tak_udp_client=tak_udp_client,
+        multicast_address=multicast_address,
+        multicast_port=multicast_port,
+        enable_multicast=enable_multicast
+    )
+
+    # Initialize DroneManager with CotMessenger
+    drone_manager = DroneManager(
+        max_drones=max_drones,
+        rate_limit=rate_limit,
+        inactivity_timeout=inactivity_timeout,
+        cot_messenger=cot_messenger
+    )
+
     def signal_handler(sig, frame):
         """Handles signal interruptions for graceful shutdown."""
         logger.info("Interrupted by user")
@@ -185,6 +179,8 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
             tak_client.close()
         if tak_udp_client:
             tak_udp_client.close()
+        if cot_messenger:
+            cot_messenger.close()
         logger.info("Cleaned up ZMQ resources")
         sys.exit(0)
 
@@ -310,20 +306,12 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
 
                 cot_xml = system_status.to_cot_xml()
 
-                # Sending CoT message
-                if tak_client:
-                    tak_client.send(cot_xml)
-                    logger.info(f"Sent CoT message to TAK server via TCP/TLS at {tak_host}:{tak_port}")
-                elif tak_udp_client:
-                    tak_udp_client.send(cot_xml)
-                    logger.info(f"Sent CoT message to TAK server via UDP at {tak_host}:{tak_port}")
-                elif enable_multicast and multicast_address and multicast_port:
-                    send_to_tak_udp_multicast(cot_xml, multicast_address, multicast_port)
-                    logger.info(f"Sent CoT message to multicast address {multicast_address}:{multicast_port}")
-                else:
-                    logger.debug("No TAK host/port or multicast address/port provided. Skipping sending CoT message.")
+                # Sending CoT message via CotMessenger
+                cot_messenger.send_cot(cot_xml)
+                logger.info(f"Sent CoT message to TAK/multicast.")
 
-            drone_manager.send_updates(tak_client, tak_udp_client, tak_host, tak_port, enable_multicast, multicast_address, multicast_port)
+            # Send drone updates via DroneManager
+            drone_manager.send_updates()
     except Exception as e:
         logger.error(f"An error occurred in zmq_to_cot: {e}")
     except KeyboardInterrupt:

@@ -10,18 +10,8 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+[License Text]
 """
-
 
 import socket
 import logging
@@ -36,6 +26,17 @@ class TAKUDPClient:
         self.tak_port = tak_port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         logger.debug(f"Initialized TAKUDPClient for {self.tak_host}:{self.tak_port}")
+
+    # Added Properties
+    @property
+    def host(self) -> str:
+        """Returns the TAK server host."""
+        return self.tak_host
+
+    @property
+    def port(self) -> int:
+        """Returns the TAK server port."""
+        return self.tak_port
 
     def send(self, cot_xml: bytes):
         """Sends a CoT XML message to the TAK server via UDP."""

@@ -10,8 +10,8 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -42,6 +42,17 @@ class TAKClient:
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         self.retry_count = 0
+
+    # Added Properties
+    @property
+    def host(self) -> str:
+        """Returns the TAK server host."""
+        return self.tak_host
+
+    @property
+    def port(self) -> int:
+        """Returns the TAK server port."""
+        return self.tak_port
 
     def connect(self):
         """Establishes a connection to the TAK server with exponential backoff."""
