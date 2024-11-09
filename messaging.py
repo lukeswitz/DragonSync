@@ -38,7 +38,7 @@ def send_to_tak_udp_multicast(cot_xml: bytes, multicast_address: str, multicast_
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(0.2)
-        ttl = struct.pack('b', 1)
+        ttl = struct.pack('b', 3)
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
         sock.sendto(cot_xml, (multicast_address, multicast_port))
         sock.close()
