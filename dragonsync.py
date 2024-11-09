@@ -233,27 +233,34 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
                             drone_info['id'] = item['Basic ID'].get('id', 'unknown')
                             logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
 
-                    if 'id' in drone_info:
-                        if not drone_info['id'].startswith('drone-'):
-                            drone_info['id'] = f"drone-{drone_info['id']}"
-                        logger.debug(f"Ensured drone id with prefix: {drone_info['id']}")
-
-                    if 'Location/Vector Message' in item:
-                        drone_info['lat'] = get_float(item['Location/Vector Message'].get('latitude', 0.0))
-                        drone_info['lon'] = get_float(item['Location/Vector Message'].get('longitude', 0.0))
-                        drone_info['speed'] = get_float(item['Location/Vector Message'].get('speed', 0.0))
-                        drone_info['vspeed'] = get_float(item['Location/Vector Message'].get('vert_speed', 0.0))
-                        drone_info['alt'] = get_float(item['Location/Vector Message'].get('geodetic_altitude', 0.0))
-                        drone_info['height'] = get_float(item['Location/Vector Message'].get('height_agl', 0.0))
-
-                    if 'Self-ID Message' in item:
-                        drone_info['description'] = item['Self-ID Message'].get('text', "")
-
-                    if 'System Message' in item:
-                        drone_info['pilot_lat'] = get_float(item['System Message'].get('latitude', 0.0))
-                        drone_info['pilot_lon'] = get_float(item['System Message'].get('longitude', 0.0))
-
+                # Enforce 'drone-' prefix once after parsing all IDs
                 if 'id' in drone_info:
+                    if not drone_info['id'].startswith('drone-'):
+                        drone_info['id'] = f"drone-{drone_info['id']}"
+                        logger.debug(f"Ensured drone id with prefix: {drone_info['id']}")
+                    else:
+                        logger.debug(f"Drone id already has prefix: {drone_info['id']}")
+
+                    # Continue processing other parts of the message
+                    for item in message:
+                        # Process location/vector messages
+                        if 'Location/Vector Message' in item:
+                            drone_info['lat'] = get_float(item['Location/Vector Message'].get('latitude', 0.0))
+                            drone_info['lon'] = get_float(item['Location/Vector Message'].get('longitude', 0.0))
+                            drone_info['speed'] = get_float(item['Location/Vector Message'].get('speed', 0.0))
+                            drone_info['vspeed'] = get_float(item['Location/Vector Message'].get('vert_speed', 0.0))
+                            drone_info['alt'] = get_float(item['Location/Vector Message'].get('geodetic_altitude', 0.0))
+                            drone_info['height'] = get_float(item['Location/Vector Message'].get('height_agl', 0.0))
+
+                        # Process Self-ID messages
+                        if 'Self-ID Message' in item:
+                            drone_info['description'] = item['Self-ID Message'].get('text', "")
+
+                        # Process System messages
+                        if 'System Message' in item:
+                            drone_info['pilot_lat'] = get_float(item['System Message'].get('latitude', 0.0))
+                            drone_info['pilot_lon'] = get_float(item['System Message'].get('longitude', 0.0))
+
                     drone_id = drone_info['id']
                     if drone_id in drone_manager.drone_dict:
                         drone = drone_manager.drone_dict[drone_id]
