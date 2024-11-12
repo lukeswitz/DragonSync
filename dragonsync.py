@@ -137,10 +137,21 @@ def setup_tls_context(tak_tls_p12: str, tak_tls_p12_pass: Optional[str], tak_tls
 
     return tls_context
 
-def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak_host: Optional[str] = None,
-               tak_port: Optional[int] = None, tak_tls_context: Optional[ssl.SSLContext] = None,
-               tak_protocol: Optional[str] = 'TCP', multicast_address: Optional[str] = None, multicast_port: Optional[int] = None,
-               enable_multicast: bool = False, rate_limit: float = 1.0, max_drones: int = 30, inactivity_timeout: float = 60.0):
+def zmq_to_cot(
+    zmq_host: str,
+    zmq_port: int,
+    zmq_status_port: Optional[int],
+    tak_host: Optional[str] = None,
+    tak_port: Optional[int] = None,
+    tak_tls_context: Optional[ssl.SSLContext] = None,
+    tak_protocol: Optional[str] = 'TCP',
+    multicast_address: Optional[str] = None,
+    multicast_port: Optional[int] = None,
+    enable_multicast: bool = False,
+    rate_limit: float = 1.0,
+    max_drones: int = 30,
+    inactivity_timeout: float = 60.0
+):
     """Main function to convert ZMQ messages to CoT and send to TAK server."""
 
     context = zmq.Context()
@@ -223,15 +234,74 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
                 logger.debug(f"Received telemetry JSON: {message}")
 
                 drone_info = {}
-                for item in message:
-                    if 'Basic ID' in item:
-                        id_type = item['Basic ID'].get('id_type')
+
+                # Check if message is a list (original format) or dict (ESP32 format)
+                if isinstance(message, list):
+                    # Original format: list of dictionaries
+                    for item in message:
+                        if isinstance(item, dict):
+                            # Process each item as a dictionary
+                            if 'Basic ID' in item:
+                                id_type = item['Basic ID'].get('id_type')
+                                if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
+                                    drone_info['id'] = item['Basic ID'].get('id', 'unknown')
+                                    logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
+                                elif id_type == 'CAA Assigned Registration ID' and 'id' not in drone_info:
+                                    drone_info['id'] = item['Basic ID'].get('id', 'unknown')
+                                    logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
+
+                            # Process location/vector messages
+                            if 'Location/Vector Message' in item:
+                                drone_info['lat'] = get_float(item['Location/Vector Message'].get('latitude', 0.0))
+                                drone_info['lon'] = get_float(item['Location/Vector Message'].get('longitude', 0.0))
+                                drone_info['speed'] = get_float(item['Location/Vector Message'].get('speed', 0.0))
+                                drone_info['vspeed'] = get_float(item['Location/Vector Message'].get('vert_speed', 0.0))
+                                drone_info['alt'] = get_float(item['Location/Vector Message'].get('geodetic_altitude', 0.0))
+                                drone_info['height'] = get_float(item['Location/Vector Message'].get('height_agl', 0.0))
+
+                            # Process Self-ID messages
+                            if 'Self-ID Message' in item:
+                                drone_info['description'] = item['Self-ID Message'].get('text', "")
+
+                            # Process System messages
+                            if 'System Message' in item:
+                                drone_info['pilot_lat'] = get_float(item['System Message'].get('latitude', 0.0))
+                                drone_info['pilot_lon'] = get_float(item['System Message'].get('longitude', 0.0))
+                        else:
+                            logger.error("Unexpected item type in message list; expected dict.")
+
+                elif isinstance(message, dict):
+                    # ESP32 format: single dictionary
+                    if 'Basic ID' in message:
+                        id_type = message['Basic ID'].get('id_type')
                         if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
-                            drone_info['id'] = item['Basic ID'].get('id', 'unknown')
+                            drone_info['id'] = message['Basic ID'].get('id', 'unknown')
                             logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
                         elif id_type == 'CAA Assigned Registration ID' and 'id' not in drone_info:
-                            drone_info['id'] = item['Basic ID'].get('id', 'unknown')
+                            drone_info['id'] = message['Basic ID'].get('id', 'unknown')
                             logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
+
+                    # Process location/vector messages
+                    if 'Location/Vector Message' in message:
+                        drone_info['lat'] = get_float(message['Location/Vector Message'].get('latitude', 0.0))
+                        drone_info['lon'] = get_float(message['Location/Vector Message'].get('longitude', 0.0))
+                        drone_info['speed'] = get_float(message['Location/Vector Message'].get('speed', 0.0))
+                        drone_info['vspeed'] = get_float(message['Location/Vector Message'].get('vert_speed', 0.0))
+                        drone_info['alt'] = get_float(message['Location/Vector Message'].get('geodetic_altitude', 0.0))
+                        drone_info['height'] = get_float(message['Location/Vector Message'].get('height_agl', 0.0))
+
+                    # Process Self-ID messages
+                    if 'Self-ID Message' in message:
+                        drone_info['description'] = message['Self-ID Message'].get('text', "")
+
+                    # Process System messages
+                    if 'System Message' in message:
+                        drone_info['pilot_lat'] = get_float(message['System Message'].get('latitude', 0.0))
+                        drone_info['pilot_lon'] = get_float(message['System Message'].get('longitude', 0.0))
+
+                else:
+                    logger.error("Unexpected message format; expected dict or list.")
+                    continue  # Skip this message
 
                 # Enforce 'drone-' prefix once after parsing all IDs
                 if 'id' in drone_info:
@@ -240,26 +310,6 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
                         logger.debug(f"Ensured drone id with prefix: {drone_info['id']}")
                     else:
                         logger.debug(f"Drone id already has prefix: {drone_info['id']}")
-
-                    # Continue processing other parts of the message
-                    for item in message:
-                        # Process location/vector messages
-                        if 'Location/Vector Message' in item:
-                            drone_info['lat'] = get_float(item['Location/Vector Message'].get('latitude', 0.0))
-                            drone_info['lon'] = get_float(item['Location/Vector Message'].get('longitude', 0.0))
-                            drone_info['speed'] = get_float(item['Location/Vector Message'].get('speed', 0.0))
-                            drone_info['vspeed'] = get_float(item['Location/Vector Message'].get('vert_speed', 0.0))
-                            drone_info['alt'] = get_float(item['Location/Vector Message'].get('geodetic_altitude', 0.0))
-                            drone_info['height'] = get_float(item['Location/Vector Message'].get('height_agl', 0.0))
-
-                        # Process Self-ID messages
-                        if 'Self-ID Message' in item:
-                            drone_info['description'] = item['Self-ID Message'].get('text', "")
-
-                        # Process System messages
-                        if 'System Message' in item:
-                            drone_info['pilot_lat'] = get_float(item['System Message'].get('latitude', 0.0))
-                            drone_info['pilot_lon'] = get_float(item['System Message'].get('longitude', 0.0))
 
                     drone_id = drone_info['id']
                     if drone_id in drone_manager.drone_dict:
@@ -291,6 +341,8 @@ def zmq_to_cot(zmq_host: str, zmq_port: int, zmq_status_port: Optional[int], tak
                         )
                         drone_manager.update_or_add_drone(drone_id, drone)
                         logger.debug(f"Added new drone: {drone_id}")
+                else:
+                    logger.warning("Drone ID not found in message. Skipping.")
 
             if status_socket and status_socket in socks and socks[status_socket] == zmq.POLLIN:
                 logger.debug("Received a message on the status socket")
