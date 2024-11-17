@@ -58,8 +58,7 @@ git submodule update
 
 Clone the **DragonSync** repository:  
 ```bash
-git clone <DragonSync_repo_URL>
-cd DragonSync
+git clone https://github.com/alphafox02/DragonSync/
 ```
 
 ### 2. Start the Sniffle Receiver  
@@ -84,6 +83,7 @@ python3 zmq_decoder.py -z
 In a new terminal, start the `wardragon_monitor.py` script to collect system info and GPS data, serving it on **port 4225**:  
 
 ```bash
+cd DragonSync
 python3 wardragon_monitor.py --zmq_host 127.0.0.1 --zmq_port 4225 --interval 30
 ```
 
