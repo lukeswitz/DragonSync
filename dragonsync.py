@@ -150,7 +150,8 @@ def zmq_to_cot(
     enable_multicast: bool = False,
     rate_limit: float = 1.0,
     max_drones: int = 30,
-    inactivity_timeout: float = 60.0
+    inactivity_timeout: float = 60.0,
+    multicast_interface: Optional[str] = None
 ):
     """Main function to convert ZMQ messages to CoT and send to TAK server."""
 
@@ -190,7 +191,8 @@ def zmq_to_cot(
         tak_udp_client=tak_udp_client,
         multicast_address=multicast_address,
         multicast_port=multicast_port,
-        enable_multicast=enable_multicast
+        enable_multicast=enable_multicast,
+        multicast_interface=multicast_interface
     )
 
     # Initialize DroneManager with CotMessenger
@@ -235,21 +237,26 @@ def zmq_to_cot(
 
                 drone_info = {}
 
-                # Check if message is a list (original format) or dict (ESP32 format)
                 if isinstance(message, list):
                     # Original format: list of dictionaries
                     for item in message:
                         if isinstance(item, dict):
                             # Process each item as a dictionary
                             if 'Basic ID' in item:
+                                if 'mac' not in drone_info:
+                                    mac_address = item['Basic ID'].get('MAC')
+                                    if mac_address:
+                                        drone_info['mac'] = mac_address
+                                        logger.debug(f"Parsed MAC Address: {mac_address}")
+                                                        
                                 id_type = item['Basic ID'].get('id_type')
-                                if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
-                                    drone_info['id'] = item['Basic ID'].get('id', 'unknown')
-                                    logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
-                                elif id_type == 'CAA Assigned Registration ID' and 'id' not in drone_info:
-                                    drone_info['id'] = item['Basic ID'].get('id', 'unknown')
-                                    logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
-
+                                if 'id' not in drone_info:
+                                    if id_type == 'Serial Number (ANSI/CTA-2063-A)':
+                                            drone_info['id'] = item['Basic ID'].get('id', 'unknown')
+                                            logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
+                                    elif id_type == 'CAA Assigned Registration ID':
+                                            drone_info['id'] = item['Basic ID'].get('id', 'unknown')
+                                            logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
                             # Process location/vector messages
                             if 'Location/Vector Message' in item:
                                 drone_info['lat'] = get_float(item['Location/Vector Message'].get('latitude', 0.0))
@@ -273,14 +280,20 @@ def zmq_to_cot(
                 elif isinstance(message, dict):
                     # ESP32 format: single dictionary
                     if 'Basic ID' in message:
-                        id_type = message['Basic ID'].get('id_type')
-                        if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
-                            drone_info['id'] = message['Basic ID'].get('id', 'unknown')
-                            logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
-                        elif id_type == 'CAA Assigned Registration ID' and 'id' not in drone_info:
-                            drone_info['id'] = message['Basic ID'].get('id', 'unknown')
-                            logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
+                        if 'mac' not in drone_info:
+                            mac_address = message['Basic ID'].get('MAC')
+                            if mac_address:
+                                drone_info['mac'] = mac_address
+                                logger.debug(f"Parsed MAC Address: {mac_address}")
 
+                        id_type = message['Basic ID'].get('id_type')
+                        if 'id' not in drone_info:
+                            if id_type == 'Serial Number (ANSI/CTA-2063-A)':
+                                drone_info['id'] = message['Basic ID'].get('id', 'unknown')
+                                logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
+                            elif id_type == 'CAA Assigned Registration ID':
+                                drone_info['id'] = message['Basic ID'].get('id', 'unknown')
+                                logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
                     # Process location/vector messages
                     if 'Location/Vector Message' in message:
                         drone_info['lat'] = get_float(message['Location/Vector Message'].get('latitude', 0.0))
@@ -323,7 +336,8 @@ def zmq_to_cot(
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
-                            description=drone_info.get('description', "")
+                            description=drone_info.get('description', ""),
+                            mac=drone_info.get('mac')
                         )
                         logger.debug(f"Updated drone: {drone_id}")
                     else:
@@ -337,7 +351,8 @@ def zmq_to_cot(
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
-                            description=drone_info.get('description', "")
+                            description=drone_info.get('description', ""),
+                            mac=drone_info.get('mac')
                         )
                         drone_manager.update_or_add_drone(drone_id, drone)
                         logger.debug(f"Added new drone: {drone_id}")
@@ -415,6 +430,7 @@ if __name__ == "__main__":
     parser.add_argument("--tak-multicast-addr", type=str, help="TAK multicast address (optional)")
     parser.add_argument("--tak-multicast-port", type=int, help="TAK multicast port (optional)")
     parser.add_argument("--enable-multicast", action="store_true", help="Enable sending to multicast address")
+    parser.add_argument("--tak-multicast-interface", type=str, help="Multicast interface (IP or name) to use for sending multicast")
     parser.add_argument("--rate-limit", type=float, help="Rate limit for sending CoT messages (seconds)")
     parser.add_argument("--max-drones", type=int, help="Maximum number of drones to track simultaneously")
     parser.add_argument("--inactivity-timeout", type=float, help="Time in seconds before a drone is considered inactive")
@@ -445,6 +461,8 @@ if __name__ == "__main__":
         tak_protocol = None
         logger.info("TAK host and port not provided. 'tak_protocol' will be ignored.")
 
+    tak_multicast_interface = args.tak_multicast_interface if args.tak_multicast_interface is not None else get_str(config_values.get("tak_multicast_interface"))
+
     # Assign configuration values, giving precedence to command-line arguments
     config = {
         "zmq_host": args.zmq_host if args.zmq_host is not None else get_str(config_values.get("zmq_host", "127.0.0.1")),
@@ -462,6 +480,7 @@ if __name__ == "__main__":
         "rate_limit": args.rate_limit if args.rate_limit is not None else get_float(config_values.get("rate_limit", 1.0)),
         "max_drones": args.max_drones if args.max_drones is not None else get_int(config_values.get("max_drones", 30)),
         "inactivity_timeout": args.inactivity_timeout if args.inactivity_timeout is not None else get_float(config_values.get("inactivity_timeout", 60.0)),
+        "tak_multicast_interface": tak_multicast_interface
     }
 
     # Validate configuration
@@ -491,5 +510,7 @@ if __name__ == "__main__":
         enable_multicast=config["enable_multicast"],
         rate_limit=config["rate_limit"],
         max_drones=config["max_drones"],
-        inactivity_timeout=config["inactivity_timeout"]
+        inactivity_timeout=config["inactivity_timeout"],
+        multicast_interface=config["tak_multicast_interface"]
     )
+    

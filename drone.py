@@ -33,7 +33,8 @@ class Drone:
     """Represents a drone and its telemetry data."""
 
     def __init__(self, id: str, lat: float, lon: float, speed: float, vspeed: float,
-                 alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str):
+                alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str):
+        self.mac = mac
         self.id = id
         self.lat = lat
         self.lon = lon
@@ -47,8 +48,9 @@ class Drone:
         self.last_update_time = time.time()
 
     def update(self, lat: float, lon: float, speed: float, vspeed: float, alt: float,
-               height: float, pilot_lat: float, pilot_lon: float, description: str):
+               height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str):
         """Updates the drone's telemetry data."""
+        self.mac = mac
         self.lat = lat
         self.lon = lon
         self.speed = speed
@@ -112,3 +114,4 @@ class Drone:
         )
 
         return etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+    
