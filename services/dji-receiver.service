@@ -4,7 +4,6 @@ After=network.target
 
 [Service]
 User=dragon
-Group=dragon
 WorkingDirectory=/home/dragon/WarDragon/DroneID
 ExecStart=/usr/bin/python3 /home/dragon/WarDragon/DroneID/dji_receiver.py
 Restart=always
