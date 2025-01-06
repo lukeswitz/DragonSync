@@ -1,0 +1,15 @@
+[Unit]
+Description=DJI ZMQ To Tar1090
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/dragon/WarDragon/zmqToTar1090/djizmqToTar1090.py
+WorkingDirectory=/home/dragon/WarDragon/zmqToTar1090
+Restart=always
+RestartSec=5
+User=dragon
+
+[Install]
+WantedBy=multi-user.target
