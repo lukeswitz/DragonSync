@@ -243,8 +243,15 @@ def zmq_to_cot(
                     for item in message:
                         if isinstance(item, dict):
                             # Process each item as a dictionary
+                            if 'MAC' in item:
+                                drone_info['mac'] = item['MAC']
+                            if 'RSSI' in item:
+                                drone_info['rssi'] = item['RSSI']
+
                             if 'Basic ID' in item:
                                 id_type = item['Basic ID'].get('id_type')
+                                drone_info['mac'] = item['Basic ID'].get('MAC')
+                                drone_info['rssi'] = item['Basic ID'].get('RSSI')
                                 if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
                                     drone_info['id'] = item['Basic ID'].get('id', 'unknown')
                                     logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
@@ -273,9 +280,20 @@ def zmq_to_cot(
                             logger.error("Unexpected item type in message list; expected dict.")
 
                 elif isinstance(message, dict):
+                    if "AUX_ADV_IND" in message:
+                        # Get RSSI from raw message
+                        if "rssi" in message["AUX_ADV_IND"]:
+                            drone_info['rssi'] = message["AUX_ADV_IND"]["rssi"]
+                        # Get MAC from raw message
+                        if "aext" in message and "AdvA" in message["aext"]:
+                            mac = message["aext"]["AdvA"].split()[0]  # Extract MAC before " (Public)"
+                            drone_info['mac'] = mac
+
                     # ESP32 format: single dictionary
                     if 'Basic ID' in message:
                         id_type = message['Basic ID'].get('id_type')
+                        drone_info['mac'] = item['Basic ID'].get('MAC')
+                        drone_info['rssi'] = item['Basic ID'].get('RSSI')
                         if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
                             drone_info['id'] = message['Basic ID'].get('id', 'unknown')
                             logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
@@ -317,6 +335,8 @@ def zmq_to_cot(
                     if drone_id in drone_manager.drone_dict:
                         drone = drone_manager.drone_dict[drone_id]
                         drone.update(
+                            mac=drone_info.get('mac', ""),
+                            rssi=drone_info.get('rssi', 0.0),
                             lat=drone_info.get('lat', 0.0),
                             lon=drone_info.get('lon', 0.0),
                             speed=drone_info.get('speed', 0.0),
@@ -339,7 +359,9 @@ def zmq_to_cot(
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
-                            description=drone_info.get('description', "")
+                            description=drone_info.get('description', ""),
+                            mac=drone_info.get('mac', ""),
+                            rssi=drone_info.get('rssi', 0)
                         )
                         drone_manager.update_or_add_drone(drone_id, drone)
                         logger.debug(f"Added new drone: {drone_id}")
