@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 MIT License
 
@@ -21,7 +22,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-
 
 import argparse
 import json
@@ -74,7 +74,8 @@ def get_gps_data(debug=False):
 def get_serial_number(debug=False):
     """Retrieve the system's serial number or MAC address as a unique identifier."""
     invalid_serials = [
-        'N/A', 'Default string', 'To be filled by O.E.M.', 'None', 'Not Specified', 'Unknown', ''
+        'N/A', 'Default string', 'To be filled by O.E.M.', 'None',
+        'Not Specified', 'Unknown', ''
     ]
     try:
         result = subprocess.run(
@@ -96,7 +97,6 @@ def get_serial_number(debug=False):
     except subprocess.CalledProcessError as e:
         if debug:
             print(f"Error retrieving serial number: {e}")
-
     except Exception as e:
         if debug:
             print(f"Unexpected error retrieving serial number: {e}")
@@ -148,7 +148,7 @@ def get_serial_number(debug=False):
             return generated_uuid
 
 
-def get_cpu_temperature():
+def get_cpu_temperature(debug=False):
     """Retrieve the CPU temperature using the 'sensors' command."""
     try:
         result = subprocess.run(['sensors'], capture_output=True, text=True, check=True)
@@ -173,6 +173,89 @@ def get_system_stats():
     }
 
 
+# ------------------------------------------------------------------------
+# NEW FUNCTION: Retrieve AntSDR (Pluto) temperatures using iio_attr commands
+# ------------------------------------------------------------------------
+def get_pluto_temperatures(debug=False):
+    """
+    Attempt to gather the Pluto (RF chip) and Zynq chip temperatures
+    using iio_attr (and iio_info) commands.
+
+    Returns a dict like:
+      {
+          "pluto_temp": 48.7,  # in °C
+          "zynq_temp":  45.2   # in °C
+      }
+    or 'N/A' values if not available.
+    """
+    temps = {
+        'pluto_temp': 'N/A',
+        'zynq_temp': 'N/A'
+    }
+
+    # Helper: check if a command exists
+    def tool_exists(tool):
+        return subprocess.run(['which', tool], capture_output=True).returncode == 0
+
+    # Ensure iio_info & iio_attr exist on PATH
+    if not (tool_exists('iio_info') and tool_exists('iio_attr')):
+        if debug:
+            print("iio_info or iio_attr not found. Can't retrieve Pluto temps.")
+        return temps
+
+    try:
+        # Try automatically finding a URI from iio_info -s
+        uri = None
+        result = subprocess.run(['iio_info', '-s'], capture_output=True, text=True, check=True)
+        for line in result.stdout.strip().splitlines():
+            if 'PLUTO' in line.upper():
+                # Typically something like: "[usb:3.17.5] (PlutoSDR (ADALM-PLUTO))"
+                parts = line.split()
+                for p in parts:
+                    if p.startswith('[') and p.endswith(']'):
+                        uri = p.strip('[]')
+                        break
+                break
+
+        # Fallback if nothing found
+        if not uri:
+            uri = "ip:192.168.2.1"
+            if debug:
+                print("No USB device found, falling back to ip:192.168.2.1")
+
+        # Pluto (ad9361) temperature -> iio_attr -u <uri> -c ad9361-phy temp0 input
+        cmd_pluto = ['iio_attr', '-u', uri, '-c', 'ad9361-phy', 'temp0', 'input']
+        pluto_raw_out = subprocess.run(cmd_pluto, capture_output=True, text=True, check=True)
+        pluto_raw_str = pluto_raw_out.stdout.strip().split()[-1]  # last token
+        pluto_temp_c = float(pluto_raw_str) / 1000.0
+
+        # Zynq (xadc) temperature -> raw + offset + scale
+        cmd_xadc_raw    = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'raw']
+        cmd_xadc_offset = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'offset']
+        cmd_xadc_scale  = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'scale']
+
+        raw    = float(subprocess.run(cmd_xadc_raw,    capture_output=True, text=True, check=True).stdout.strip().split()[-1])
+        offset = float(subprocess.run(cmd_xadc_offset, capture_output=True, text=True, check=True).stdout.strip().split()[-1])
+        scale  = float(subprocess.run(cmd_xadc_scale,  capture_output=True, text=True, check=True).stdout.strip().split()[-1])
+
+        zynq_temp_c = (raw + offset) * scale / 1000.0
+
+        temps['pluto_temp'] = round(pluto_temp_c, 1)
+        temps['zynq_temp']  = round(zynq_temp_c, 1)
+
+        if debug:
+            print(f"AntSDR/Pluto Temps -> Pluto: {temps['pluto_temp']} °C, Zynq: {temps['zynq_temp']} °C")
+
+    except subprocess.CalledProcessError as e:
+        if debug:
+            print(f"Error: iio commands returned non-zero exit code: {e}")
+    except Exception as e:
+        if debug:
+            print(f"Unexpected error reading Pluto/Zynq temps: {e}")
+
+    return temps
+
+
 def create_zmq_context(host, port):
     """Create and bind a ZMQ PUB socket."""
     context = zmq.Context()
@@ -193,7 +276,6 @@ def signal_handler(sig, frame):
 
 def main(host, port, interval, debug):
     """Main function to gather data and send it over ZMQ."""
-    # Set up signal handling for graceful exit
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -205,13 +287,18 @@ def main(host, port, interval, debug):
                 'timestamp': time.time(),
                 'gps_data': get_gps_data(debug=debug),
                 'serial_number': get_serial_number(debug=debug),
-                'system_stats': get_system_stats()
+                'system_stats': get_system_stats(),
+                # --------------------------------------------
+                # Add the new temperature data to the payload
+                'ant_sdr_temps': get_pluto_temperatures(debug=debug)
+                # --------------------------------------------
             }
             json_data = json.dumps(data, indent=4)
 
             if debug:
                 print(f"Debug Output:\n{json_data}")
             else:
+                # Publish over ZMQ
                 socket.send_string(json_data)
 
             time.sleep(interval)
