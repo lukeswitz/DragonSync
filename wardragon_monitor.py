@@ -175,6 +175,7 @@ def get_system_stats():
 
 # ------------------------------------------------------------------------
 # NEW FUNCTION: Retrieve AntSDR (Pluto) temperatures using iio_attr commands
+# Inspired by and code used from https://github.com/analogdevicesinc/plutosdr_scripts/blob/master/pluto_temp.sh
 # ------------------------------------------------------------------------
 def get_pluto_temperatures(debug=False):
     """
