@@ -380,6 +380,9 @@ def zmq_to_cot(
                 alt = get_float(gps_data.get('altitude', 0.0))
 
                 system_stats = status_message.get('system_stats', {})
+                ant_sdr_temps = status_message.get('ant_sdr_temps', {})
+                pluto_temp = ant_sdr_temps.get('pluto_temp', 'N/A')
+                zynq_temp  = ant_sdr_temps.get('zynq_temp',  'N/A')
 
                 # Extract system statistics with defaults
                 cpu_usage = get_float(system_stats.get('cpu_usage', 0.0))
@@ -407,7 +410,9 @@ def zmq_to_cot(
                     disk_total=disk_total,
                     disk_used=disk_used,
                     temperature=temperature,
-                    uptime=uptime
+                    uptime=uptime,
+                    pluto_temp=pluto_temp,
+                    zynq_temp=zynq_temp 
                 )
 
                 cot_xml = system_status.to_cot_xml()
