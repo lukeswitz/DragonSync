@@ -45,6 +45,8 @@ class SystemStatus:
         disk_used: float = 0.0,
         temperature: float = 0.0,
         uptime: float = 0.0,
+        pluto_temp: str = 'N/A',
+        zynq_temp: str = 'N/A' 
     ):
         self.id = f"wardragon-{serial_number}"
         self.lat = lat
@@ -58,7 +60,9 @@ class SystemStatus:
         self.temperature = temperature
         self.uptime = uptime
         self.last_update_time = time.time()
-
+        self.pluto_temp = pluto_temp
+        self.zynq_temp = zynq_temp
+        
     def to_cot_xml(self) -> bytes:
         """Converts the system status data to a CoT XML message."""
         current_time = datetime.datetime.utcnow()
@@ -97,7 +101,9 @@ class SystemStatus:
             f"Memory Total: {self.memory_total:.2f} MB, Memory Available: {self.memory_available:.2f} MB, "
             f"Disk Total: {self.disk_total:.2f} MB, Disk Used: {self.disk_used:.2f} MB, "
             f"Temperature: {self.temperature}°C, "
-            f"Uptime: {self.uptime} seconds"
+            f"Uptime: {self.uptime} seconds, "
+            f"Pluto Temp: {self.pluto_temp}°C, "
+            f"Zynq Temp: {self.zynq_temp}°C"
         )
 
         # Escape special characters in remarks
