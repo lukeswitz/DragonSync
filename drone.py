@@ -28,6 +28,9 @@ import xml.sax.saxutils
 from lxml import etree
 from typing import Optional
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Drone:
     """Represents a drone and its telemetry data."""
