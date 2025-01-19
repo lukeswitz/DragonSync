@@ -396,8 +396,10 @@ def zmq_to_cot(
                 uptime = get_float(system_stats.get('uptime', 0.0))
 
                 if lat == 0.0 and lon == 0.0:
-                    logger.warning("Latitude and longitude are missing or zero. Skipping CoT message.")
-                    continue  # Skip this iteration
+                    logger.warning(
+                        "Latitude and longitude are missing or zero. "
+                        "Proceeding with CoT message using [0.0, 0.0]."
+                    )
 
                 system_status = SystemStatus(
                     serial_number=serial_number,
