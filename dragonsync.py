@@ -372,7 +372,6 @@ def zmq_to_cot(
                 logger.debug("Received a message on the status socket")
                 status_message = status_socket.recv_json()
                 # logger.debug(f"Received system status JSON: {status_message}")
-                logger.debug("Received system status JSON")
                 
                 serial_number = status_message.get('serial_number', 'unknown')
                 gps_data = status_message.get('gps_data', {})
