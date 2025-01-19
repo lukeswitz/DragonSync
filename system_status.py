@@ -28,6 +28,9 @@ import xml.sax.saxutils
 from lxml import etree
 from typing import Optional
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SystemStatus:
     """Represents system status data."""
@@ -45,6 +48,8 @@ class SystemStatus:
         disk_used: float = 0.0,
         temperature: float = 0.0,
         uptime: float = 0.0,
+        pluto_temp: str = 'N/A',
+        zynq_temp: str = 'N/A' 
     ):
         self.id = f"wardragon-{serial_number}"
         self.lat = lat
@@ -58,7 +63,9 @@ class SystemStatus:
         self.temperature = temperature
         self.uptime = uptime
         self.last_update_time = time.time()
-
+        self.pluto_temp = pluto_temp
+        self.zynq_temp = zynq_temp
+        
     def to_cot_xml(self) -> bytes:
         """Converts the system status data to a CoT XML message."""
         current_time = datetime.datetime.utcnow()
@@ -97,7 +104,9 @@ class SystemStatus:
             f"Memory Total: {self.memory_total:.2f} MB, Memory Available: {self.memory_available:.2f} MB, "
             f"Disk Total: {self.disk_total:.2f} MB, Disk Used: {self.disk_used:.2f} MB, "
             f"Temperature: {self.temperature}°C, "
-            f"Uptime: {self.uptime} seconds"
+            f"Uptime: {self.uptime} seconds, "
+            f"Pluto Temp: {self.pluto_temp}°C, "
+            f"Zynq Temp: {self.zynq_temp}°C"
         )
 
         # Escape special characters in remarks
@@ -114,4 +123,10 @@ class SystemStatus:
             iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/Ground_Vehicle.png'  # Use appropriate icon
         )
 
-        return etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+        cot_xml_bytes = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+
+        # --- Debug Logging ---
+        # Only prints if the logger is set to DEBUG (e.g. by --debug in your main script)
+        logger.debug("SystemStatus CoT XML for '%s':\n%s", self.id, cot_xml_bytes.decode('utf-8'))
+
+        return cot_xml_bytes

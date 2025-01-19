@@ -28,6 +28,9 @@ import xml.sax.saxutils
 from lxml import etree
 from typing import Optional
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Drone:
     """Represents a drone and its telemetry data."""
@@ -118,4 +121,10 @@ class Drone:
             iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/UAV_quad.png'
         )
 
-        return etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+        # Convert Element to XML bytes
+        cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+
+        # Debug log: only prints if logging level is DEBUG
+        logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
+
+        return cot_xml

@@ -233,7 +233,7 @@ def zmq_to_cot(
             if telemetry_socket in socks and socks[telemetry_socket] == zmq.POLLIN:
                 logger.debug("Received a message on the telemetry socket")
                 message = telemetry_socket.recv_json()
-                logger.debug(f"Received telemetry JSON: {message}")
+                # logger.debug(f"Received telemetry JSON: {message}")
 
                 drone_info = {}
 
@@ -371,8 +371,8 @@ def zmq_to_cot(
             if status_socket and status_socket in socks and socks[status_socket] == zmq.POLLIN:
                 logger.debug("Received a message on the status socket")
                 status_message = status_socket.recv_json()
-                logger.debug(f"Received system status JSON: {status_message}")
-
+                # logger.debug(f"Received system status JSON: {status_message}")
+                
                 serial_number = status_message.get('serial_number', 'unknown')
                 gps_data = status_message.get('gps_data', {})
                 lat = get_float(gps_data.get('latitude', 0.0))
@@ -380,6 +380,9 @@ def zmq_to_cot(
                 alt = get_float(gps_data.get('altitude', 0.0))
 
                 system_stats = status_message.get('system_stats', {})
+                ant_sdr_temps = status_message.get('ant_sdr_temps', {})
+                pluto_temp = ant_sdr_temps.get('pluto_temp', 'N/A')
+                zynq_temp  = ant_sdr_temps.get('zynq_temp',  'N/A')
 
                 # Extract system statistics with defaults
                 cpu_usage = get_float(system_stats.get('cpu_usage', 0.0))
@@ -393,8 +396,10 @@ def zmq_to_cot(
                 uptime = get_float(system_stats.get('uptime', 0.0))
 
                 if lat == 0.0 and lon == 0.0:
-                    logger.warning("Latitude and longitude are missing or zero. Skipping CoT message.")
-                    continue  # Skip this iteration
+                    logger.warning(
+                        "Latitude and longitude are missing or zero. "
+                        "Proceeding with CoT message using [0.0, 0.0]."
+                    )
 
                 system_status = SystemStatus(
                     serial_number=serial_number,
@@ -407,7 +412,9 @@ def zmq_to_cot(
                     disk_total=disk_total,
                     disk_used=disk_used,
                     temperature=temperature,
-                    uptime=uptime
+                    uptime=uptime,
+                    pluto_temp=pluto_temp,
+                    zynq_temp=zynq_temp 
                 )
 
                 cot_xml = system_status.to_cot_xml()
