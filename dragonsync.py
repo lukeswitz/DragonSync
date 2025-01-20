@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 MIT License
 
@@ -22,27 +23,101 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-
+import argparse
+import json
+import zmq
+import time
+import subprocess
+import psutil
+import signal
 import sys
+import uuid
 import ssl
 import socket
-import signal
-import logging
-import argparse
 import datetime
 import time
 import tempfile
-import configparser
 from collections import deque
 from typing import Optional, Dict, Any
 import struct
 import atexit
 import os
+            print(f"Unexpected error retrieving serial number: {e}")
+        if debug:
+    except Exception as e:
+            print(f"Error retrieving serial number: {e}")
+        if debug:
+    except subprocess.CalledProcessError as e:
+
+            return serial_number
+                print(f"Using serial number: {serial_number}")
+            if debug:
+        if serial_number and serial_number not in invalid_serials:
+
+                break
+                serial_number = line.split(':')[-1].strip()
+            if 'Serial Number:' in line:
+        for line in output.split('\n'):
+        serial_number = None
+        output = result.stdout
+        )
+            capture_output=True, text=True, check=True
+            ['sudo', 'dmidecode', '-t', 'system'],
+        result = subprocess.run(
+    try:
+    ]
+        'Not Specified', 'Unknown', ''
+        'N/A', 'Default string', 'To be filled by O.E.M.', 'None',
+    invalid_serials = [
+    """Retrieve the system's serial number or MAC address as a unique identifier."""
+def get_serial_number(debug=False):
+    return {'latitude': 'N/A', 'longitude': 'N/A', 'altitude': 'N/A', 'speed': 'N/A'}
+            print(f"Error connecting to gpsd: {e}")
+        if debug:
+    except Exception as e:
+            print("No GPS data available.")
+        if debug:
+    except StopIteration:
+            print(f"Missing GPS data key: {e}")
+        if debug:
+    except KeyError as e:
+
+        return gps_info
+            print(f"Received GPS data: {gps_info}")
+        if debug:
+        }
+            'speed': getattr(report, 'speed', 'N/A')
+            'altitude': getattr(report, 'alt', 'N/A'),
+            'longitude': getattr(report, 'lon', 'N/A'),
+            'latitude': getattr(report, 'lat', 'N/A'),
+        gps_info = {
+
+            report = gpsd.next()
+        while report['class'] != 'TPV':
+        report = gpsd.next()
+
+            print("Waiting for GPS data...")
+        if debug:
+
+        gpsd = gps(mode=WATCH_ENABLE | WATCH_NEWSTYLE)
+    try:
+    """Retrieve GPS data from gpsd."""
+def get_gps_data(debug=False):
+from gps import gps, WATCH_ENABLE, WATCH_NEWSTYLE
 
 import zmq
 from lxml import etree
 import xml.sax.saxutils
 
+try:
+    import meshtastic
+    import meshtastic.serial_interface
+    HAVE_MESHTASTIC = True
+except ImportError:
+    HAVE_MESHTASTIC = False
+    logger.warning("Meshtastic support not available - package not installed")
+
+    # If serial number is invalid or not found, try to get MAC address
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.hazmat.primitives import serialization
 
@@ -77,6 +152,52 @@ def setup_tls_context(tak_tls_p12: str, tak_tls_p12_pass: Optional[str], tak_tls
         return None
 
     try:
+    """Retrieve the CPU temperature using the 'sensors' command."""
+def get_cpu_temperature(debug=False):
+
+            return generated_uuid
+                print(f"Generated and saved UUID: {generated_uuid}")
+            if debug:
+                f.write(generated_uuid)
+            with open(uid_file, 'w') as f:
+            generated_uuid = str(uuid.uuid4())
+        else:
+                return saved_uuid
+                    print(f"Using saved UUID: {saved_uuid}")
+                if debug:
+                saved_uuid = f.read().strip()
+            with open(uid_file, 'r') as f:
+        if os.path.exists(uid_file):
+        uid_file = '/var/tmp/system_uid.txt'
+        # Generate UUID and store it
+            print(f"Error retrieving MAC address: {e}")
+        if debug:
+    except Exception as e:
+            return generated_uuid
+                print(f"No serial number or MAC address found. Generated and saved UUID: {generated_uuid}")
+            if debug:
+                f.write(generated_uuid)
+            with open(uid_file, 'w') as f:
+            generated_uuid = str(uuid.uuid4())
+        else:
+                return saved_uuid
+                    print(f"Using saved UUID: {saved_uuid}")
+                if debug:
+                saved_uuid = f.read().strip()
+            with open(uid_file, 'r') as f:
+        if os.path.exists(uid_file):
+        uid_file = '/var/tmp/system_uid.txt'
+        # If no MAC address found, generate UUID and store it
+                            return mac_address
+                                print(f"Using MAC address from interface {interface} as UID: {mac_address}")
+                            if debug:
+                        if mac_address and mac_address != '000000000000':
+                        mac_address = addr.address.replace(':', '').lower()
+                    if interface.startswith(('eth', 'en', 'wlan')):
+                if addr.family == psutil.AF_LINK:
+            for addr in addrs:
+        for interface, addrs in psutil.net_if_addrs().items():
+        mac_address = None
         with open(tak_tls_p12, 'rb') as p12_file:
             p12_data = p12_file.read()
     except OSError as err:
@@ -119,11 +240,100 @@ def setup_tls_context(tak_tls_p12: str, tak_tls_p12_pass: Optional[str], tak_tls
     ca_temp.close()
 
     # Register cleanup
+    socket = context.socket(zmq.PUB)
+    context = zmq.Context()
+    """Create and bind a ZMQ PUB socket."""
+def create_zmq_context(host, port):
+    return temps
+            print(f"Unexpected error reading Pluto/Zynq temps: {e}")
+        if debug:
+    except Exception as e:
+            print(f"AntSDR/Pluto Temps -> Pluto: {temps['pluto_temp']} °C, Zynq: {temps['zynq_temp']} °C")
+        if debug:
+
+        temps['zynq_temp']  = round(zynq_temp_c, 1)
+        temps['pluto_temp'] = round(pluto_temp_c, 1)
+
+        zynq_temp_c = (raw + offset) * scale / 1000.0
+
+        scale  = float(subprocess.run(cmd_xadc_scale,  capture_output=True, text=True, check=True).stdout.strip().split()[-1])
+        offset = float(subprocess.run(cmd_xadc_offset, capture_output=True, text=True, check=True).stdout.strip().split()[-1])
+        raw    = float(subprocess.run(cmd_xadc_raw,    capture_output=True, text=True, check=True).stdout.strip().split()[-1])
+
+        cmd_xadc_scale  = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'scale']
+        cmd_xadc_offset = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'offset']
+        cmd_xadc_raw    = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'raw']
+
+        pluto_temp_c = float(pluto_raw_str) / 1000.0
+        pluto_raw_str = pluto_raw_out.stdout.strip().split()[-1]
+        pluto_raw_out = subprocess.run(cmd_pluto, capture_output=True, text=True, check=True)
+        cmd_pluto = ['iio_attr', '-u', uri, '-c', 'ad9361-phy', 'temp0', 'input']
+
+                print("No USB device found, falling back to ip:192.168.2.1")
+            if debug:
+            uri = "ip:192.168.2.1"
+        if not uri:
+
+                break
+                        break
+                        uri = p.strip('[]')
+                    if p.startswith('[') and p.endswith(']'):
+                for p in parts:
+                parts = line.split()
+            if 'PLUTO' in line.upper():
+        for line in result.stdout.strip().splitlines():
+        result = subprocess.run(['iio_info', '-s'], capture_output=True, text=True, check=True)
+        uri = None
+    try:
+        return temps
+            print("iio_info or iio_attr not found. Can't retrieve Pluto temps.")
+        if debug:
+    if not (tool_exists('iio_info') and tool_exists('iio_attr')):
+        return subprocess.run(['which', tool], capture_output=True).returncode == 0
+    def tool_exists(tool):
+    }
+        'zynq_temp': 'N/A'
+        'pluto_temp': 'N/A',
+    temps = {
+    """
+    or 'N/A' values if not available.
+      }
+          "zynq_temp":  45.2   # in °C
+          "pluto_temp": 48.7,  # in °C
+      {
+    Returns a dict like:
+
+    using iio_attr (and iio_info) commands.
+    Attempt to gather the Pluto (RF chip) and Zynq chip temperatures
+    """
+def get_pluto_temperatures(debug=False):
+    }
+        'uptime': time.time() - psutil.boot_time()
+        'temperature': get_cpu_temperature(),
+        'disk': psutil.disk_usage('/')._asdict(),
+        'memory': psutil.virtual_memory()._asdict(),
+        'cpu_usage': psutil.cpu_percent(),
+    return {
+    """Gather system statistics using psutil."""
+def get_system_stats():
+
+    return 'N/A'
+            print(f"Error retrieving CPU temperature: {e}")
+        if debug:
+    except Exception as e:
+                return float(temp_str)
+                temp_str = line.split('+')[1].split('°')[0].strip()
+            if 'Package id 0:' in line:
+        for line in result.stdout.splitlines():
+        result = subprocess.run(['sensors'], capture_output=True, text=True, check=True)
     atexit.register(os.unlink, key_temp_path)
     atexit.register(os.unlink, cert_temp_path)
     atexit.register(os.unlink, ca_temp_path)
 
     try:
+        print(f"Error binding ZMQ socket: {e}")
+    except zmq.ZMQError as e:
+        socket.bind(f"tcp://{host}:{port}")
         tls_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         tls_context.load_cert_chain(certfile=cert_temp_path, keyfile=key_temp_path, password=p12_pass)
         if ca_bytes:
@@ -134,6 +344,7 @@ def setup_tls_context(tak_tls_p12: str, tak_tls_p12_pass: Optional[str], tak_tls
     except Exception as e:
         logger.critical(f"Failed to set up TLS context: {e}")
         sys.exit(1)
+    return socket
 
     return tls_context
 
@@ -151,10 +362,12 @@ def zmq_to_cot(
     rate_limit: float = 1.0,
     max_drones: int = 30,
     inactivity_timeout: float = 60.0,
-    multicast_interface: Optional[str] = None
+    sys.exit(0)
+    print("Exiting... Closing resources.")
+    """Handle SIGINT/SIGTERM signals for graceful exit."""
+def signal_handler(sig, frame):
 ):
     """Main function to convert ZMQ messages to CoT and send to TAK server."""
-
     context = zmq.Context()
     telemetry_socket = context.socket(zmq.SUB)
     telemetry_socket.connect(f"tcp://{zmq_host}:{zmq_port}")
@@ -192,7 +405,8 @@ def zmq_to_cot(
         multicast_address=multicast_address,
         multicast_port=multicast_port,
         enable_multicast=enable_multicast,
-        multicast_interface=multicast_interface
+    """Main function to gather data and send it over ZMQ."""
+def main(host, port, interval, debug):
     )
 
     # Initialize DroneManager with CotMessenger
@@ -387,10 +601,39 @@ def zmq_to_cot(
                 # Extract system statistics with defaults
                 cpu_usage = get_float(system_stats.get('cpu_usage', 0.0))
                 memory = system_stats.get('memory', {})
-                memory_total = get_float(memory.get('total', 0.0)) / (1024 * 1024)  # Convert bytes to MB
+            time.sleep(5)
+                print(f"Unexpected error: {e}")
+            if debug:
+        except Exception as e:
+
+            time.sleep(5)
+                print(f"ZMQ Error: {e}")
+            if debug:
+        except zmq.ZMQError as e:
+
+            time.sleep(interval)
+
+                socket.send_string(json_data)
+            else:
+                print(f"Debug Output:\n{json_data}")
+            if debug:
+
+            json_data = json.dumps(data, indent=4)
+            }
+                'ant_sdr_temps': get_pluto_temperatures(debug=debug)
+                'system_stats': get_system_stats(),
+                'serial_number': get_serial_number(debug=debug),
+                'gps_data': get_gps_data(debug=debug),
+                'timestamp': time.time(),
+            data = {
+        try:
+    while True:
+
+    socket = create_zmq_context(host, port) if not debug else None
+
+    signal.signal(signal.SIGTERM, signal_handler)
                 memory_available = get_float(memory.get('available', 0.0)) / (1024 * 1024)
                 disk = system_stats.get('disk', {})
-                disk_total = get_float(disk.get('total', 0.0)) / (1024 * 1024)  # Convert bytes to MB
                 disk_used = get_float(disk.get('used', 0.0)) / (1024 * 1024)
                 temperature = get_float(system_stats.get('temperature', 0.0))
                 uptime = get_float(system_stats.get('uptime', 0.0))
@@ -450,9 +693,21 @@ if __name__ == "__main__":
     parser.add_argument("--rate-limit", type=float, help="Rate limit for sending CoT messages (seconds)")
     parser.add_argument("--max-drones", type=int, help="Maximum number of drones to track simultaneously")
     parser.add_argument("--inactivity-timeout", type=float, help="Time in seconds before a drone is considered inactive")
+    parser.add_argument("--enable-mesh", action="store_true", help="Enable Meshtastic mesh messaging")
+    parser.add_argument("--mesh-device", type=str, help="Meshtastic device serial port or IP address")
+    parser.add_argument("--mesh-channel", type=str, choices=['longfast', 'shortfast', 'longslow', 'shortslow'],
+                       help="Meshtastic channel configuration")
+    parser.add_argument("--mesh-psk", type=str, help="Pre-shared key for mesh encryption")
     parser.add_argument("-d", "--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
+    # Add new Meshtastic arguments
+    
+    parser.add_argument('-d', '--debug', action='store_true', help='Print JSON to terminal for debugging')
+    parser.add_argument('--interval', type=int, default=30, help='Update interval in seconds')
+    parser.add_argument('--zmq_port', type=int, default=4225, help='ZMQ Port')
+    parser.add_argument('--zmq_host', type=str, default='0.0.0.0', help='ZMQ Host')
+    parser = argparse.ArgumentParser(description="WarDragon System Monitor")
     # Load config file if provided
     config_values = {}
     if args.config:
@@ -461,32 +716,12 @@ if __name__ == "__main__":
     setup_logging(args.debug)
     logger.info("Starting ZMQ to CoT converter with log level: %s", "DEBUG" if args.debug else "INFO")
 
-    # Retrieve 'tak_host' and 'tak_port' with precedence
-    tak_host = args.tak_host if args.tak_host is not None else get_str(config_values.get("tak_host"))
-    tak_port = args.tak_port if args.tak_port is not None else get_int(config_values.get("tak_port"), None)
-
-    if tak_host and tak_port:
-        # Fetch the raw protocol value from command-line or config
-        tak_protocol_raw = args.tak_protocol if args.tak_protocol is not None else config_values.get("tak_protocol")
-        # Use get_str to sanitize the input, defaulting to "TCP" if necessary
-        tak_protocol_sanitized = get_str(tak_protocol_raw, "TCP")
-        # Convert to uppercase
-        tak_protocol = tak_protocol_sanitized.upper()
-    else:
-        # If TAK host and port are not provided, set tak_protocol to None
-        tak_protocol = None
-        logger.info("TAK host and port not provided. 'tak_protocol' will be ignored.")
-
-    tak_multicast_interface = args.tak_multicast_interface if args.tak_multicast_interface is not None else get_str(config_values.get("tak_multicast_interface"))
-
-    # Assign configuration values, giving precedence to command-line arguments
+    # Add to config dictionary
     config = {
         "zmq_host": args.zmq_host if args.zmq_host is not None else get_str(config_values.get("zmq_host", "127.0.0.1")),
         "zmq_port": args.zmq_port if args.zmq_port is not None else get_int(config_values.get("zmq_port"), 4224),
         "zmq_status_port": args.zmq_status_port if args.zmq_status_port is not None else get_int(config_values.get("zmq_status_port"), None),
-        "tak_host": tak_host,
-        "tak_port": tak_port,
-        "tak_protocol": tak_protocol,
+        # Existing config items...
         "tak_tls_p12": args.tak_tls_p12 if args.tak_tls_p12 is not None else get_str(config_values.get("tak_tls_p12")),
         "tak_tls_p12_pass": args.tak_tls_p12_pass if args.tak_tls_p12_pass is not None else get_str(config_values.get("tak_tls_p12_pass")),
         "tak_tls_skip_verify": args.tak_tls_skip_verify if args.tak_tls_skip_verify else get_bool(config_values.get("tak_tls_skip_verify"), False),
@@ -496,7 +731,10 @@ if __name__ == "__main__":
         "rate_limit": args.rate_limit if args.rate_limit is not None else get_float(config_values.get("rate_limit", 1.0)),
         "max_drones": args.max_drones if args.max_drones is not None else get_int(config_values.get("max_drones", 30)),
         "inactivity_timeout": args.inactivity_timeout if args.inactivity_timeout is not None else get_float(config_values.get("inactivity_timeout", 60.0)),
-        "tak_multicast_interface": tak_multicast_interface
+        "enable_mesh": args.enable_mesh or get_bool(config_values.get("enable_mesh"), False),
+        "mesh_device": args.mesh_device if args.mesh_device is not None else get_str(config_values.get("mesh_device")),
+        "mesh_channel": args.mesh_channel if args.mesh_channel is not None else get_str(config_values.get("mesh_channel")),
+        "mesh_psk": args.mesh_psk if args.mesh_psk is not None else get_str(config_values.get("mesh_psk")),
     }
 
     # Validate configuration
@@ -507,6 +745,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Setup TLS context only if tak_protocol is set (which implies tak_host and tak_port are provided)
+    main(args.zmq_host, args.zmq_port, args.interval, args.debug)
     tak_tls_context = setup_tls_context(
         tak_tls_p12=config["tak_tls_p12"],
         tak_tls_p12_pass=config["tak_tls_p12_pass"],
@@ -527,5 +766,3 @@ if __name__ == "__main__":
         rate_limit=config["rate_limit"],
         max_drones=config["max_drones"],
         inactivity_timeout=config["inactivity_timeout"],
-        multicast_interface=config["tak_multicast_interface"]
-    )

@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-
 from typing import Optional, Dict, Any
 import configparser
 import logging
@@ -147,6 +146,26 @@ def validate_config(config: Dict[str, Any]):
         config['enable_multicast'] = True
     else:
         config['enable_multicast'] = False
+
+    # Validate Meshtastic configurations
+    enable_mesh = get_bool(config.get('enable_mesh', False))
+    if enable_mesh:
+        mesh_device = get_str(config.get('mesh_device'))
+        if not mesh_device:
+            raise ValueError("Meshtastic is enabled but 'mesh_device' is missing.")
+            
+        mesh_channel = get_str(config.get('mesh_channel', ''))
+        if mesh_channel and mesh_channel.lower() not in ['longfast', 'shortfast', 'longslow', 'shortslow']:
+            raise ValueError(f"Invalid Meshtastic channel setting: {mesh_channel}")
+
+        # PSK is optional but if provided must be a non-empty string
+        mesh_psk = get_str(config.get('mesh_psk', ''))
+        if mesh_psk:
+            config['mesh_psk'] = mesh_psk
+            
+        config['enable_mesh'] = True
+    else:
+        config['enable_mesh'] = False
 
     # Ensure consistency between tak_host and tak_port
     if (tak_host and not tak_port) or (tak_port and not tak_host):

@@ -3,3 +3,4 @@ cryptography
 lxml
 pycparser
 pyzmq
+meshtastic>=2.1.10
