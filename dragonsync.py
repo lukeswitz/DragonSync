@@ -433,7 +433,7 @@ def zmq_to_cot(
 # Configuration and Execution
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ZMQ to CoT converter.")
-    parser.add_argument("--config", type=str, help="Path to config file", default="config.ini")
+    parser.add_argument("-c", "--config", type=str, help="Path to config file", default="config.ini")
     parser.add_argument("--zmq-host", help="ZMQ server host")
     parser.add_argument("--zmq-port", type=int, help="ZMQ server port for telemetry")
     parser.add_argument("--zmq-status-port", type=int, help="ZMQ server port for system status")
