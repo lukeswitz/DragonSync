@@ -276,8 +276,8 @@ def zmq_to_cot(
                             if 'System Message' in item:
                                 drone_info['pilot_lat'] = get_float(item['System Message'].get('latitude', 0.0))
                                 drone_info['pilot_lon'] = get_float(item['System Message'].get('longitude', 0.0))
-                                drone_info['home_lat']  = get_float(system_msg.get('home_lat', 0.0))
-                                drone_info['home_lon']  = get_float(system_msg.get('home_lon', 0.0))
+                                drone_info['home_lat']  = get_float(item['System Message'].get('home_lat', 0.0))
+                                drone_info['home_lon']  = get_float(item['System Message'].get('home_lon', 0.0))
                         else:
                             logger.error("Unexpected item type in message list; expected dict.")
 
