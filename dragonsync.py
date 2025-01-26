@@ -347,6 +347,8 @@ def zmq_to_cot(
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
+                            home_lat=drone_info.get('home_lat', 0.0),
+                            home_lon=drone_info.get('home_lon', 0.0),
                             description=drone_info.get('description', "")
                         )
                         logger.debug(f"Updated drone: {drone_id}")
@@ -361,6 +363,8 @@ def zmq_to_cot(
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
+                            home_lat=drone_info.get('home_lat', 0.0),
+                            home_lon=drone_info.get('home_lon', 0.0),
                             description=drone_info.get('description', ""),
                             mac=drone_info.get('mac', ""),
                             rssi=drone_info.get('rssi', 0)
