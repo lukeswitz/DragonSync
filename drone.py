@@ -37,7 +37,7 @@ class Drone:
 
     def __init__(self, id: str, lat: float, lon: float, speed: float, vspeed: float,
                  alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
-                 home_lat: float = 0.0, home_lon: float = 0.0):
+                 home_lat: float, home_lon: float):
         self.id = id
         self.mac = mac
         self.rssi = rssi
@@ -57,7 +57,7 @@ class Drone:
 
     def update(self, lat: float, lon: float, speed: float, vspeed: float, alt: float,
                height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
-               home_lat: float = 0.0, home_lon: float = 0.0):
+               home_lat: float, home_lon: float):
         """Updates the drone's telemetry data."""
         self.lat = lat
         self.lon = lon
