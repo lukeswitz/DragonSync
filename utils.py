@@ -70,13 +70,29 @@ def get_int(value: Optional[Any], default: Optional[int] = None) -> Optional[int
 
 def get_float(value: Optional[Any], default: float = 0.0) -> float:
     """
-    Safely converts a value to a float. If conversion fails or value is None, returns the default.
+    Safely converts a value to float. If the value is a string containing units (e.g., "7.5 m"),
+    it extracts the numeric part before conversion.
     """
     if value is None:
         return default
+    if isinstance(value, str):
+        # Split the string and take the first part as the numeric value
+        parts = value.strip().split()
+        if parts:
+            try:
+                numeric_value = float(parts[0])
+                logger.debug(f"Parsed float from string '{value}': {numeric_value}")
+                return numeric_value
+            except ValueError:
+                logger.warning(f"Unable to parse float from string: '{value}'. Using default {default}.")
+                return default
+        else:
+            logger.warning(f"Empty string provided for float conversion. Using default {default}.")
+            return default
     try:
         return float(value)
     except (ValueError, TypeError):
+        logger.warning(f"Invalid float value: {value}. Using default {default}.")
         return default
 
 def get_bool(value: Optional[Any], default: bool = False) -> bool:
