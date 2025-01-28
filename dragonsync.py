@@ -276,8 +276,8 @@ def zmq_to_cot(
                             if 'System Message' in item:
                                 drone_info['pilot_lat'] = get_float(item['System Message'].get('latitude', 0.0))
                                 drone_info['pilot_lon'] = get_float(item['System Message'].get('longitude', 0.0))
-                                drone_info['home_lat']  = get_float(item['System Message'].get('home_lat', 0.0))
-                                drone_info['home_lon']  = get_float(item['System Message'].get('home_lon', 0.0))
+                                #drone_info['home_lat']  = get_float(item['System Message'].get('home_lat', 0.0))
+                                #drone_info['home_lon']  = get_float(item['System Message'].get('home_lon', 0.0))
                         else:
                             logger.error("Unexpected item type in message list; expected dict.")
 
@@ -347,8 +347,8 @@ def zmq_to_cot(
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
-                            home_lat=drone_info.get('home_lat', 0.0),
-                            home_lon=drone_info.get('home_lon', 0.0),
+                            #home_lat=drone_info.get('home_lat', 0.0),
+                            #home_lon=drone_info.get('home_lon', 0.0),
                             description=drone_info.get('description', "")
                         )
                         logger.debug(f"Updated drone: {drone_id}")
@@ -363,8 +363,8 @@ def zmq_to_cot(
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
-                            home_lat=drone_info.get('home_lat', 0.0),
-                            home_lon=drone_info.get('home_lon', 0.0),
+                            #home_lat=drone_info.get('home_lat', 0.0),
+                            #home_lon=drone_info.get('home_lon', 0.0),
                             description=drone_info.get('description', ""),
                             mac=drone_info.get('mac', ""),
                             rssi=drone_info.get('rssi', 0)
