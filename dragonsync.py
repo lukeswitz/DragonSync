@@ -247,17 +247,16 @@ def zmq_to_cot(
                                 drone_info['mac'] = item['MAC']
                             if 'RSSI' in item:
                                 drone_info['rssi'] = item['RSSI']
-
+                                
                             if 'Basic ID' in item:
-                                id_type = item['Basic ID'].get('id_type')
+                                id_type = item['Basic ID'].get('id_type')  # Get id_type first
+                                drone_info['id_type'] = id_type  # Store it in drone_info
                                 drone_info['mac'] = item['Basic ID'].get('MAC')
                                 drone_info['rssi'] = item['Basic ID'].get('RSSI')
                                 if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
                                     drone_info['id'] = item['Basic ID'].get('id', 'unknown')
-                                    logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
                                 elif id_type == 'CAA Assigned Registration ID' and 'id' not in drone_info:
                                     drone_info['id'] = item['Basic ID'].get('id', 'unknown')
-                                    logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
 
                             # Process location/vector messages
                             if 'Location/Vector Message' in item:
@@ -293,15 +292,13 @@ def zmq_to_cot(
 
                     # ESP32 format: single dictionary
                     if 'Basic ID' in message:
-                        id_type = message['Basic ID'].get('id_type')
+                        drone_info['id_type'] = message['Basic ID'].get('id_type')
                         drone_info['mac'] = message['Basic ID'].get('MAC')
                         drone_info['rssi'] = message['Basic ID'].get('RSSI')
                         if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
                             drone_info['id'] = message['Basic ID'].get('id', 'unknown')
-                            logger.debug(f"Parsed Serial Number ID: {drone_info['id']}")
                         elif id_type == 'CAA Assigned Registration ID' and 'id' not in drone_info:
                             drone_info['id'] = message['Basic ID'].get('id', 'unknown')
-                            logger.debug(f"Parsed CAA Assigned ID: {drone_info['id']}")
 
                     # Process location/vector messages
                     if 'Location/Vector Message' in message:
@@ -339,6 +336,7 @@ def zmq_to_cot(
                         drone.update(
                             mac=drone_info.get('mac', ""),
                             rssi=drone_info.get('rssi', 0.0),
+                            id_type=drone_info.get('id_type', ""),
                             lat=drone_info.get('lat', 0.0),
                             lon=drone_info.get('lon', 0.0),
                             speed=drone_info.get('speed', 0.0),
@@ -357,6 +355,7 @@ def zmq_to_cot(
                             id=drone_info['id'],
                             lat=drone_info.get('lat', 0.0),
                             lon=drone_info.get('lon', 0.0),
+                            id_type=drone_info.get('id_type', ""),
                             speed=drone_info.get('speed', 0.0),
                             vspeed=drone_info.get('vspeed', 0.0),
                             alt=drone_info.get('alt', 0.0),
@@ -535,3 +534,4 @@ if __name__ == "__main__":
         inactivity_timeout=config["inactivity_timeout"],
         multicast_interface=config["tak_multicast_interface"]
     )
+    
