@@ -36,9 +36,9 @@ class Drone:
     """Represents a drone and its telemetry data."""
 
     def __init__(self, id: str, lat: float, lon: float, speed: float, vspeed: float,
-                 alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
-                 home_lat: float = 0.0, home_lon: float = 0.0):
+                 alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int, home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = ""):
         self.id = id
+        self.id_type = id_type
         self.mac = mac
         self.rssi = rssi
         self.lat = lat
@@ -57,10 +57,11 @@ class Drone:
 
     def update(self, lat: float, lon: float, speed: float, vspeed: float, alt: float,
                height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
-               home_lat: float = 0.0, home_lon: float = 0.0):
+               home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = ""):
         """Updates the drone's telemetry data."""
         self.lat = lat
         self.lon = lon
+        self.id_type = id_type
         self.speed = speed
         self.vspeed = vspeed
         self.alt = alt
@@ -111,6 +112,7 @@ class Drone:
 
         remarks_text = (
             f"MAC: {self.mac}, RSSI: {self.rssi}dBm, "
+            f"ID Type: {self.id_type}, "  
             f"Self-ID: {self.description}, "
             f"Location/Vector: [Speed: {self.speed} m/s, Vert Speed: {self.vspeed} m/s, "
             f"Geodetic Altitude: {self.alt} m, Height AGL: {self.height} m], "
@@ -135,3 +137,4 @@ class Drone:
         logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
 
         return cot_xml
+    
