@@ -7,7 +7,7 @@ FIRMWARE_URL="https://github.com/alphafox02/T-Halow/raw/refs/heads/wifi_rid/firm
 FIRMWARE_FILE="firmware_T-Halow_DragonOS_RID_Scanner_WiFi.bin"
 ESPTOOL_DIR="esptool"
 SERVICE_NAME="zmq-decoder.service"
-ESP_PORT="/dev/ttyACM0"
+ESP_PORT="/dev/esp0"
 
 # Clone the esptool repository if it doesn't already exist
 if [ ! -d "$ESPTOOL_DIR" ]; then
