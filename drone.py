@@ -36,9 +36,12 @@ class Drone:
     """Represents a drone and its telemetry data."""
 
     def __init__(self, id: str, lat: float, lon: float, speed: float, vspeed: float,
-                 alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int, home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = ""):
+                 alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int, 
+                 home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = "", index: int = 0, runtime: int = 0):
         self.id = id
         self.id_type = id_type
+        self.index = index
+        self.runtime = runtime
         self.mac = mac
         self.rssi = rssi
         self.lat = lat
@@ -57,7 +60,7 @@ class Drone:
 
     def update(self, lat: float, lon: float, speed: float, vspeed: float, alt: float,
                height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
-               home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = ""):
+               home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = "", index: int = 0, runtime: int = 0):
         """Updates the drone's telemetry data."""
         self.lat = lat
         self.lon = lon
@@ -74,6 +77,8 @@ class Drone:
         self.last_update_time = time.time()
         self.mac = mac
         self.rssi = rssi
+        self.index = index
+        self.runtime = runtime
 
     def to_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
         """Converts the drone's telemetry data to a Cursor-on-Target (CoT) XML message."""
@@ -117,7 +122,7 @@ class Drone:
             f"Location/Vector: [Speed: {self.speed} m/s, Vert Speed: {self.vspeed} m/s, "
             f"Geodetic Altitude: {self.alt} m, Height AGL: {self.height} m], "
             f"System: [Operator Lat: {self.pilot_lat}, Operator Lon: {self.pilot_lon}, "
-            f"Home Lat: {self.home_lat}, Home Lon: {self.home_lon}]"
+            f"Home Lat: {self.home_lat}, Home Lon: {self.home_lon}, Index: {self.index}, Runtime: {self.runtime}]"
         )
         remarks_text = xml.sax.saxutils.escape(remarks_text)
         etree.SubElement(detail, 'remarks').text = remarks_text
