@@ -292,6 +292,7 @@ def zmq_to_cot(
 
                     # ESP32 format: single dictionary
                     if 'Basic ID' in message:
+                        id_type = message['Basic ID'].get('id_type')
                         drone_info['id_type'] = message['Basic ID'].get('id_type')
                         drone_info['mac'] = message['Basic ID'].get('MAC')
                         drone_info['rssi'] = message['Basic ID'].get('RSSI')
