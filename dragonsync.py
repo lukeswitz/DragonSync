@@ -240,14 +240,6 @@ def zmq_to_cot(
                 # Check if message is a list (original format) or dict (ESP32 format)
                 if isinstance(message, list):
                     # Original format: list of dictionaries
-                    drone_info['index'] = 0
-                    drone_info['runtime'] = 0
-
-                    # Try to extract index and runtime from the first list item or the entire message
-                    if message and isinstance(message[0], dict):
-                        drone_info['index'] = message[0].get('index', 0)
-                        drone_info['runtime'] = message[0].get('runtime', 0)
-
                     for item in message:
                         if isinstance(item, dict):
                             # Process each item as a dictionary
