@@ -240,6 +240,14 @@ def zmq_to_cot(
                 # Check if message is a list (original format) or dict (ESP32 format)
                 if isinstance(message, list):
                     # Original format: list of dictionaries
+                    drone_info['index'] = 0
+                    drone_info['runtime'] = 0
+
+                    # Try to extract index and runtime from the first list item or the entire message
+                    if message and isinstance(message[0], dict):
+                        drone_info['index'] = message[0].get('index', 0)
+                        drone_info['runtime'] = message[0].get('runtime', 0)
+
                     for item in message:
                         if isinstance(item, dict):
                             # Process each item as a dictionary
@@ -281,6 +289,9 @@ def zmq_to_cot(
                             logger.error("Unexpected item type in message list; expected dict.")
 
                 elif isinstance(message, dict):
+                    drone_info['index'] = message.get('index', 0)
+                    drone_info['runtime'] = message.get('runtime', 0)  
+
                     if "AUX_ADV_IND" in message:
                         # Get RSSI from raw message
                         if "rssi" in message["AUX_ADV_IND"]:
@@ -335,9 +346,6 @@ def zmq_to_cot(
                     if drone_id in drone_manager.drone_dict:
                         drone = drone_manager.drone_dict[drone_id]
                         drone.update(
-                            mac=drone_info.get('mac', ""),
-                            rssi=drone_info.get('rssi', 0.0),
-                            id_type=drone_info.get('id_type', ""),
                             lat=drone_info.get('lat', 0.0),
                             lon=drone_info.get('lon', 0.0),
                             speed=drone_info.get('speed', 0.0),
@@ -346,9 +354,14 @@ def zmq_to_cot(
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
+                            description=drone_info.get('description', ""),
+                            mac=drone_info.get('mac', ""),
+                            rssi=drone_info.get('rssi', 0),
                             home_lat=drone_info.get('home_lat', 0.0),
                             home_lon=drone_info.get('home_lon', 0.0),
-                            description=drone_info.get('description', "")
+                            id_type=drone_info.get('id_type', ""),
+                            index=drone_info.get('index', 0),
+                            runtime=drone_info.get('runtime', 0)
                         )
                         logger.debug(f"Updated drone: {drone_id}")
                     else:
@@ -356,18 +369,20 @@ def zmq_to_cot(
                             id=drone_info['id'],
                             lat=drone_info.get('lat', 0.0),
                             lon=drone_info.get('lon', 0.0),
-                            id_type=drone_info.get('id_type', ""),
                             speed=drone_info.get('speed', 0.0),
                             vspeed=drone_info.get('vspeed', 0.0),
                             alt=drone_info.get('alt', 0.0),
                             height=drone_info.get('height', 0.0),
                             pilot_lat=drone_info.get('pilot_lat', 0.0),
                             pilot_lon=drone_info.get('pilot_lon', 0.0),
-                            home_lat=drone_info.get('home_lat', 0.0),
-                            home_lon=drone_info.get('home_lon', 0.0),
                             description=drone_info.get('description', ""),
                             mac=drone_info.get('mac', ""),
-                            rssi=drone_info.get('rssi', 0)
+                            rssi=drone_info.get('rssi', 0),
+                            home_lat=drone_info.get('home_lat', 0.0),
+                            home_lon=drone_info.get('home_lon', 0.0),
+                            id_type=drone_info.get('id_type', ""),
+                            index=drone_info.get('index', 0),
+                            runtime=drone_info.get('runtime', 0)
                         )
                         drone_manager.update_or_add_drone(drone_id, drone)
                         logger.debug(f"Added new drone: {drone_id}")
