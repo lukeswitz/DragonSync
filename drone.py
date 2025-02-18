@@ -135,6 +135,14 @@ class Drone:
             iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/UAV_quad.png'
         )
 
+        # Convert Element to XML bytes
+        cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+
+        # Debug log: only prints if logging level is DEBUG
+        logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
+
+        return cot_xml
+
     def to_pilot_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
         """Generates a CoT XML message for the pilot location."""
         current_time = datetime.datetime.utcnow()
@@ -177,8 +185,12 @@ class Drone:
             iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/Soldier.png'
         )
 
+        # Convert Element to XML bytes
         cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
-        logger.debug("CoT XML for pilot of drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
+
+        # Debug log: only prints if logging level is DEBUG
+        logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
+
         return cot_xml
 
     def to_home_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
