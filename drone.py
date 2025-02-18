@@ -151,10 +151,15 @@ class Drone:
         else:
             stale_time = current_time + datetime.timedelta(minutes=10)
 
+        base_id = self.id
+        if base_id.startswith("drone-"):
+            base_id = base_id[len("drone-"):]
+        uid = f"pilot-{base_id}"
+
         event = etree.Element(
             'event',
             version='2.0',
-            uid=f"pilot-{self.id}",
+            uid=uid,
             type='b-m-p-s-m',
             time=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -201,10 +206,15 @@ class Drone:
         else:
             stale_time = current_time + datetime.timedelta(minutes=10)
 
+        base_id = self.id
+        if base_id.startswith("drone-"):
+            base_id = base_id[len("drone-"):]
+        uid = f"home-{base_id}"
+
         event = etree.Element(
             'event',
             version='2.0',
-            uid=f"home-{self.id}",
+            uid=uid,
             type='b-m-p-s-m',  # 
             time=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
