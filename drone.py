@@ -135,7 +135,7 @@ class Drone:
             iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/UAV_quad.png'
         )
 
-         def to_pilot_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
+    def to_pilot_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
         """Generates a CoT XML message for the pilot location."""
         current_time = datetime.datetime.utcnow()
         if stale_offset is not None:
