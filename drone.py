@@ -151,10 +151,16 @@ class Drone:
         else:
             stale_time = current_time + datetime.timedelta(minutes=10)
 
+         # Debug log the original id.
+        logger.debug("to_pilot_cot_xml: original self.id: %s", self.id)
         base_id = self.id
         if base_id.startswith("drone-"):
             base_id = base_id[len("drone-"):]
+            logger.debug("to_pilot_cot_xml: stripped 'drone-' prefix, base_id: %s", base_id)
+        else:
+            logger.debug("to_pilot_cot_xml: no 'drone-' prefix found, base_id remains: %s", base_id)
         uid = f"pilot-{base_id}"
+        logger.debug("to_pilot_cot_xml: constructed uid: %s", uid)
 
         event = etree.Element(
             'event',
