@@ -233,7 +233,7 @@ class Drone:
         )
 
         detail = etree.SubElement(event, 'detail')
-        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=uid")
+        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=uid)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
 
         remarks_text = f"Home location for drone {self.id}"
