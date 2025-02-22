@@ -142,4 +142,114 @@ class Drone:
         logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
 
         return cot_xml
+
+    def to_pilot_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
+        """Generates a CoT XML message for the pilot location."""
+        current_time = datetime.datetime.utcnow()
+        if stale_offset is not None:
+            stale_time = current_time + datetime.timedelta(seconds=stale_offset)
+        else:
+            stale_time = current_time + datetime.timedelta(minutes=10)
+
+        base_id = self.id
+        if base_id.startswith("drone-"):
+            base_id = base_id[len("drone-"):]
+        uid = f"pilot-{base_id}"
+
+        event = etree.Element(
+            'event',
+            version='2.0',
+            uid=uid,
+            type='b-m-p-s-m',
+            time=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+            start=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+            stale=stale_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+            how='m-g'
+        )
+
+        point = etree.SubElement(
+            event,
+            'point',
+            lat=str(self.pilot_lat),
+            lon=str(self.pilot_lon),
+            hae=str(self.alt), 
+            ce='35.0',
+            le='999999'
+        )
+
+        detail = etree.SubElement(event, 'detail')
+        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=uid)
+        etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
+
+        remarks_text = f"Pilot location for drone {self.id}"
+        etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(remarks_text)
+
+        etree.SubElement(
+            detail,
+            'usericon',
+            iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/Soldier.png'
+        )
+
+        # Convert Element to XML bytes
+        cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+
+        # Debug log: only prints if logging level is DEBUG
+        logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
+
+        return cot_xml
+
+    def to_home_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
+        """Generates a CoT XML message for the home location."""
+        current_time = datetime.datetime.utcnow()
+        if stale_offset is not None:
+            stale_time = current_time + datetime.timedelta(seconds=stale_offset)
+        else:
+            stale_time = current_time + datetime.timedelta(minutes=10)
+
+        base_id = self.id
+        if base_id.startswith("drone-"):
+            base_id = base_id[len("drone-"):]
+        uid = f"home-{base_id}"
+
+        event = etree.Element(
+            'event',
+            version='2.0',
+            uid=uid,
+            type='b-m-p-s-m',  # 
+            time=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+            start=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+            stale=stale_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+            how='m-g'
+        )
+
+        point = etree.SubElement(
+            event,
+            'point',
+            lat=str(self.home_lat),
+            lon=str(self.home_lon),
+            hae=str(self.alt), 
+            ce='35.0',
+            le='999999'
+        )
+
+        detail = etree.SubElement(event, 'detail')
+        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=uid)
+        etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
+
+        remarks_text = f"Home location for drone {self.id}"
+        etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(remarks_text)
+
+        etree.SubElement(
+            detail,
+            'usericon',
+            iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/House.png'
+        )
+
+        # Convert Element to XML bytes
+        cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+
+        # Debug log: only prints if logging level is DEBUG
+        logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
+
+        return cot_xml
     
