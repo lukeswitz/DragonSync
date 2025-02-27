@@ -50,7 +50,7 @@ If you install DragonSync elsewhere, ensure the following:
 
 Clone the **DroneID** repository:  
 ```bash
-git clone https://github.com/bkerler/DroneID
+git clone https://github.com/alphafox02/DroneID
 cd DroneID
 git submodule init
 git submodule update
