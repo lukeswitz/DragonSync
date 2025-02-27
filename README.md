@@ -24,8 +24,8 @@ DragonSync is a powerful tool for monitoring Remote ID-compliant drones and syst
 
 ## Requirements  
 
-### **Pre-installed on WarDragon:**  
-If running DragonSync on the WarDragon kit, all dependencies are pre-configured, including hardware-specific sensors and GPS modules.
+### **Pre-installed on WarDragon Pro: (Skip to step 5)**  
+If running DragonSync on the WarDragon Pro kit, all dependencies are pre-configured, including hardware-specific sensors and GPS modules.
 
 ### **For Other Systems:**  
 If you install DragonSync elsewhere, ensure the following:  
@@ -44,7 +44,7 @@ If you install DragonSync elsewhere, ensure the following:
 
 ---
 
-## Setup and Usage (WarDragon users skip to 5)  
+## Setup and Usage 
 
 ### 1. Clone the Repositories  
 
