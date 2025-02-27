@@ -44,7 +44,7 @@ If you install DragonSync elsewhere, ensure the following:
 
 ---
 
-## Setup and Usage  
+## Setup and Usage (WarDragon users skip to 5)  
 
 ### 1. Clone the Repositories  
 
