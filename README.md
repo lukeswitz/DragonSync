@@ -10,7 +10,7 @@ DragonSync is a powerful tool for monitoring Remote ID and DroneID-compliant dro
 ## Features  
 
 - **Remote ID Drone Detection:**  
-   Uses [DroneID]([https://github.com/alphafox02/DroneID]) to detect Bluetooth Remote ID signals. Thanks to @bkerler for this fantastic tool. WiFi Remote ID is currently handled by an esp32.
+   Uses [DroneID](https://github.com/alphafox02/DroneID]) to detect Bluetooth Remote ID signals. Thanks to @bkerler for this fantastic tool. WiFi Remote ID is currently handled by an esp32.
 - **DJI DroneID Detection:**
    Uses [Antsdr_DJI](https://github.com/alphafox02/antsdr_dji_droneid]) to detect DJI DroneID signals.  
 - **System Status Monitoring:**  
