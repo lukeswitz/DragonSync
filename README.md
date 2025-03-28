@@ -3,14 +3,16 @@
 
 ## Overview  
 
-DragonSync is a powerful tool for monitoring Remote ID-compliant drones and system status, generating Cursor on Target (CoT) messages in real-time. It integrates with ATAK or other TAK clients and leverages ZeroMQ (ZMQ) for seamless data flow. Everything is pre-configured for use on the **WarDragon**, but installation on other systems is also supported with additional dependencies.
+DragonSync is a powerful tool for monitoring Remote ID and DroneID-compliant drones and system status, generating Cursor on Target (CoT) messages in real-time. It integrates with ATAK or other TAK clients and leverages ZeroMQ (ZMQ) for seamless data flow. Everything is pre-configured for use on the **WarDragon**, but installation on other systems is also supported with additional dependencies.
 
 ---
 
 ## Features  
 
 - **Remote ID Drone Detection:**  
-   Uses [DroneID](https://github.com/bkerler/DroneID) to detect Bluetooth/Wi-Fi Remote ID signals. Thanks to @bkerler for this fantastic tool.  
+   Uses [DroneID]([https://github.com/alphafox02/DroneID]) to detect Bluetooth Remote ID signals. Thanks to @bkerler for this fantastic tool. WiFi Remote ID is currently handled by an esp32.
+  **DJI DroneID Detection:**
+   Uses [Antsdr_DJI](https://github.com/alphafox02/antsdr_dji_droneid]) to detect DJI DroneID signals.  
 - **System Status Monitoring:**  
    `wardragon_monitor.py` gathers hardware status (via `lm-sensors`), GPS location, and serial number.  
 - **CoT Generation:**  
