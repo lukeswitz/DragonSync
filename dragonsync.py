@@ -31,6 +31,7 @@ import logging
 import argparse
 import datetime
 import time
+import threading
 import tempfile
 import configparser
 from collections import deque
@@ -178,7 +179,7 @@ def zmq_to_cot(
     if tak_host and tak_port:
         if tak_protocol == 'TCP':
             tak_client = TAKClient(tak_host, tak_port, tak_tls_context)
-            tak_client.connect()
+            threading.Thread(target=tak_client.run_connect_loop, daemon=True).start()
         elif tak_protocol == 'UDP':
             tak_udp_client = TAKUDPClient(tak_host, tak_port)
         else:
