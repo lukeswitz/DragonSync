@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-
 import datetime
 import xml.sax.saxutils
 from lxml import etree
@@ -57,6 +56,9 @@ class Drone:
         self.description = description
         self.last_update_time = time.time()
         self.last_sent_time = 0.0  # Track last time an update was sent
+        # Store the position of the last flight update (for movement threshold)
+        self.last_sent_lat = lat
+        self.last_sent_lon = lon
 
     def update(self, lat: float, lon: float, speed: float, vspeed: float, alt: float,
                height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
@@ -79,19 +81,31 @@ class Drone:
         self.rssi = rssi
         self.index = index
         self.runtime = runtime
+        # Note: We do not update last_sent_lat/last_sent_lon here; they are updated only when a flight update is sent.
 
-    def to_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
-        """Converts the drone's telemetry data to a Cursor-on-Target (CoT) XML message."""
+    def to_cot_xml(self, stale_offset: Optional[float] = None, unique: bool = True) -> bytes:
+        """Converts the drone's telemetry data to a Cursor-on-Target (CoT) XML message.
+        
+        :param stale_offset: Seconds to add to the current time to determine the stale time.
+        :param unique: If True, generate a unique UID (for moving drones to form a flight path). 
+                       If False, use a static UID (for hovering drones).
+        """
         current_time = datetime.datetime.utcnow()
         if stale_offset is not None:
             stale_time = current_time + datetime.timedelta(seconds=stale_offset)
         else:
             stale_time = current_time + datetime.timedelta(minutes=10)
 
+        if unique:
+            unique_suffix = current_time.strftime("%Y%m%dT%H%M%S%fZ")
+            uid = f"{self.id}-{unique_suffix}"
+        else:
+            uid = self.id
+
         event = etree.Element(
             'event',
             version='2.0',
-            uid=self.id,
+            uid=uid,
             type='b-m-p-s-m',
             time=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -110,9 +124,8 @@ class Drone:
         )
 
         detail = etree.SubElement(event, 'detail')
-
+        # The contact element uses the static drone ID for display
         etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=self.id)
-
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
 
         remarks_text = (
@@ -124,27 +137,20 @@ class Drone:
             f"System: [Operator Lat: {self.pilot_lat}, Operator Lon: {self.pilot_lon}, "
             f"Home Lat: {self.home_lat}, Home Lon: {self.home_lon}, Index: {self.index}, Runtime: {self.runtime}]"
         )
-        remarks_text = xml.sax.saxutils.escape(remarks_text)
-        etree.SubElement(detail, 'remarks').text = remarks_text
-
+        etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(remarks_text)
         etree.SubElement(detail, 'color', argb='-256')
-
         etree.SubElement(
             detail,
             'usericon',
             iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/UAV_quad.png'
         )
 
-        # Convert Element to XML bytes
         cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
-
-        # Debug log: only prints if logging level is DEBUG
         logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
-
         return cot_xml
 
     def to_pilot_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
-        """Generates a CoT XML message for the pilot location."""
+        """Generates a CoT XML message for the pilot location using a static UID."""
         current_time = datetime.datetime.utcnow()
         if stale_offset is not None:
             stale_time = current_time + datetime.timedelta(seconds=stale_offset)
@@ -154,7 +160,7 @@ class Drone:
         base_id = self.id
         if base_id.startswith("drone-"):
             base_id = base_id[len("drone-"):]
-        uid = f"pilot-{base_id}"
+        uid = f"pilot-{base_id}"  # Static UID for pilot location
 
         event = etree.Element(
             'event',
@@ -172,34 +178,29 @@ class Drone:
             'point',
             lat=str(self.pilot_lat),
             lon=str(self.pilot_lon),
-            hae=str(self.alt), 
+            hae=str(self.alt),
             ce='35.0',
             le='999999'
         )
 
         detail = etree.SubElement(event, 'detail')
-        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=uid)
+        static_callsign = f"pilot-{base_id}"
+        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=static_callsign)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
-
         remarks_text = f"Pilot location for drone {self.id}"
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(remarks_text)
-
         etree.SubElement(
             detail,
             'usericon',
             iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/Soldier.png'
         )
 
-        # Convert Element to XML bytes
         cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
-
-        # Debug log: only prints if logging level is DEBUG
-        logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
-
+        logger.debug("CoT XML for pilot of drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
         return cot_xml
 
     def to_home_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
-        """Generates a CoT XML message for the home location."""
+        """Generates a CoT XML message for the home location using a static UID."""
         current_time = datetime.datetime.utcnow()
         if stale_offset is not None:
             stale_time = current_time + datetime.timedelta(seconds=stale_offset)
@@ -209,13 +210,13 @@ class Drone:
         base_id = self.id
         if base_id.startswith("drone-"):
             base_id = base_id[len("drone-"):]
-        uid = f"home-{base_id}"
+        uid = f"home-{base_id}"  # Static UID for home location
 
         event = etree.Element(
             'event',
             version='2.0',
             uid=uid,
-            type='b-m-p-s-m',  # 
+            type='b-m-p-s-m',
             time=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -227,29 +228,23 @@ class Drone:
             'point',
             lat=str(self.home_lat),
             lon=str(self.home_lon),
-            hae=str(self.alt), 
+            hae=str(self.alt),
             ce='35.0',
             le='999999'
         )
 
         detail = etree.SubElement(event, 'detail')
-        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=uid)
+        static_callsign = f"home-{base_id}"
+        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=static_callsign)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
-
         remarks_text = f"Home location for drone {self.id}"
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(remarks_text)
-
         etree.SubElement(
             detail,
             'usericon',
             iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/House.png'
         )
 
-        # Convert Element to XML bytes
         cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
-
-        # Debug log: only prints if logging level is DEBUG
-        logger.debug("CoT XML for drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
-
+        logger.debug("CoT XML for home of drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
         return cot_xml
-    
