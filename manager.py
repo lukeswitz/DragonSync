@@ -26,6 +26,7 @@ import time
 from collections import deque
 from typing import Optional
 import logging
+import math
 
 from drone import Drone
 from messaging import CotMessenger
@@ -49,8 +50,10 @@ class DroneManager:
         self.drone_dict = {}
         self.rate_limit = rate_limit  # Active drone update frequency
         self.inactivity_timeout = inactivity_timeout  # Time before a drone is considered stale
-        self.keep_alive_interval = 10.0  # Interval for sending keep-alive CoT updates for inactive drones
+        self.keep_alive_interval = 10.0  # Interval for sending keep-alive CoT updates
         self.cot_messenger = cot_messenger
+        # Threshold (in degrees) to decide if the drone has moved significantly.
+        self.position_threshold = 0.00001
 
     def update_or_add_drone(self, drone_id: str, drone_data: Drone):
         """Updates an existing drone or adds a new one to the collection."""
@@ -83,55 +86,75 @@ class DroneManager:
 
             # Remove drones that have been inactive beyond the timeout
             if time_since_update > self.inactivity_timeout:
-                # Final stale CoT message
-                cot_xml = drone.to_cot_xml(stale_offset=0)  # Set stale time to current time
-                if self.cot_messenger:
-                    self.cot_messenger.send_cot(cot_xml)
+                # Rely on stale times to naturally remove old events
                 drones_to_remove.append(drone_id)
-                logger.debug(f"Drone {drone_id} inactive for {time_since_update:.2f}s. Sent final CoT message.")
+                logger.debug(f"Drone {drone_id} inactive for {time_since_update:.2f}s. Removing from tracking.")
                 continue
 
-            # Active drone: send updates based on the rate limit.
+            # Calculate position change since last flight update
+            delta_lat = drone.lat - drone.last_sent_lat
+            delta_lon = drone.lon - drone.last_sent_lon
+            position_change = math.sqrt(delta_lat ** 2 + delta_lon ** 2)
+
+            # Decide whether the drone is moving (unique flight update) or hovering (static update)
             if current_time - drone.last_sent_time >= self.rate_limit:
-                # Send main drone CoT update.
-                cot_xml = drone.to_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                if position_change >= self.position_threshold:
+                    # Drone has moved significantly; send a unique flight update to form the flight path.
+                    cot_xml = drone.to_cot_xml(stale_offset=self.inactivity_timeout - time_since_update, unique=True)
+                    # Update the last sent position for flight updates.
+                    drone.last_sent_lat = drone.lat
+                    drone.last_sent_lon = drone.lon
+                    logger.debug(f"Sent unique CoT update for moving drone {drone_id} (position change: {position_change:.8f}).")
+                else:
+                    # Drone is hovering; send a static update so the marker stays fresh without cluttering the flight path.
+                    cot_xml = drone.to_cot_xml(stale_offset=self.inactivity_timeout - time_since_update, unique=False)
+                    logger.debug(f"Sent static CoT update for hovering drone {drone_id} (position change: {position_change:.8f}).")
                 if self.cot_messenger:
                     self.cot_messenger.send_cot(cot_xml)
-                    drone.last_sent_time = current_time
-                    logger.debug(f"Sent CoT update for active drone {drone_id} after {time_since_update:.2f}s.")
+                drone.last_sent_time = current_time
 
-                    # Send pilot CoT update if valid coordinates are available.
-                    if drone.pilot_lat != 0.0 or drone.pilot_lon != 0.0:
-                        pilot_xml = drone.to_pilot_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                # Send pilot CoT update (static) if valid coordinates are available.
+                if drone.pilot_lat != 0.0 or drone.pilot_lon != 0.0:
+                    pilot_xml = drone.to_pilot_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                    if self.cot_messenger:
                         self.cot_messenger.send_cot(pilot_xml)
-                        logger.debug(f"Sent pilot CoT update for drone {drone_id}.")
+                    logger.debug(f"Sent pilot CoT update for drone {drone_id}.")
 
-                    # Send home CoT update if valid coordinates are available.
-                    if drone.home_lat != 0.0 or drone.home_lon != 0.0:
-                        home_xml = drone.to_home_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                # Send home CoT update (static) if valid coordinates are available.
+                if drone.home_lat != 0.0 or drone.home_lon != 0.0:
+                    home_xml = drone.to_home_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                    if self.cot_messenger:
                         self.cot_messenger.send_cot(home_xml)
-                        logger.debug(f"Sent home CoT update for drone {drone_id}.")
+                    logger.debug(f"Sent home CoT update for drone {drone_id}.")
 
-            # For drones that are still active but not due for a full update,
-            # send less frequent keep-alive updates.
+            # For drones that are still active but not yet due for a full update,
+            # send less frequent keep-alive updates with the same logic.
             elif current_time - drone.last_sent_time >= self.keep_alive_interval:
-                cot_xml = drone.to_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                if position_change >= self.position_threshold:
+                    cot_xml = drone.to_cot_xml(stale_offset=self.inactivity_timeout - time_since_update, unique=True)
+                    drone.last_sent_lat = drone.lat
+                    drone.last_sent_lon = drone.lon
+                    logger.debug(f"Sent unique keep-alive CoT update for moving drone {drone_id} (position change: {position_change:.8f}).")
+                else:
+                    cot_xml = drone.to_cot_xml(stale_offset=self.inactivity_timeout - time_since_update, unique=False)
+                    logger.debug(f"Sent static keep-alive CoT update for hovering drone {drone_id} (position change: {position_change:.8f}).")
                 if self.cot_messenger:
                     self.cot_messenger.send_cot(cot_xml)
-                    drone.last_sent_time = current_time
-                    logger.debug(f"Sent keep-alive CoT update for drone {drone_id}.")
+                drone.last_sent_time = current_time
 
-                    if drone.pilot_lat != 0.0 or drone.pilot_lon != 0.0:
-                        pilot_xml = drone.to_pilot_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                if drone.pilot_lat != 0.0 or drone.pilot_lon != 0.0:
+                    pilot_xml = drone.to_pilot_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                    if self.cot_messenger:
                         self.cot_messenger.send_cot(pilot_xml)
-                        logger.debug(f"Sent keep-alive pilot CoT update for drone {drone_id}.")
+                    logger.debug(f"Sent keep-alive pilot CoT update for drone {drone_id}.")
 
-                    if drone.home_lat != 0.0 or drone.home_lon != 0.0:
-                        home_xml = drone.to_home_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                if drone.home_lat != 0.0 or drone.home_lon != 0.0:
+                    home_xml = drone.to_home_cot_xml(stale_offset=self.inactivity_timeout - time_since_update)
+                    if self.cot_messenger:
                         self.cot_messenger.send_cot(home_xml)
-                        logger.debug(f"Sent keep-alive home CoT update for drone {drone_id}.")
+                    logger.debug(f"Sent keep-alive home CoT update for drone {drone_id}.")
 
-        # Remove inactive drones after sending the final stale message.
+        # Remove inactive drones after processing updates.
         for drone_id in drones_to_remove:
             self.drones.remove(drone_id)
             del self.drone_dict[drone_id]
