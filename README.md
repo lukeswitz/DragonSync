@@ -105,6 +105,27 @@ python3 dragonsync.py --zmq-host 0.0.0.0 --zmq-port 4224 --zmq-status-port 4225 
 
 Replace `<tak_host>` and `<tak_port>` with your TAK server’s IP address and port.  
 
+#### **Using a Custom Configuration File**
+
+You can update the included config.ini file with your preferred settings. Once edited, launch DragonSync by specifying the configuration file:
+
+```bash
+python3 dragonsync.py -c /path/to/config.ini
+```
+
+Replace /path/to/config.ini with the actual path to your updated file.
+
+### **Using the Pre-installed Systemd Service (Wardragon Kit Only)**
+
+On the Wardragon Kit, the DragonSync service is already installed. You can enable and start it manually using:
+
+```bash
+sudo systemctl enable dragonsync.service
+sudo systemctl start dragonsync.service
+```
+
+This setup will automatically run DragonSync on boot.
+
 ---
 
 ## How It Works  
