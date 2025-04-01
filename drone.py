@@ -56,9 +56,11 @@ class Drone:
         self.description = description
         self.last_update_time = time.time()
         self.last_sent_time = 0.0  # Track last time an update was sent
-        # Store the position of the last flight update (for movement threshold)
+        # Track last sent position for flight updates
         self.last_sent_lat = lat
         self.last_sent_lon = lon
+        # Counter for consecutive movement updates above threshold
+        self.consecutive_move_count = 0
 
     def update(self, lat: float, lon: float, speed: float, vspeed: float, alt: float,
                height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
@@ -81,14 +83,14 @@ class Drone:
         self.rssi = rssi
         self.index = index
         self.runtime = runtime
-        # Note: We do not update last_sent_lat/last_sent_lon here; they are updated only when a flight update is sent.
+        # Do not update last_sent_lat/last_sent_lon or consecutive_move_count here.
 
     def to_cot_xml(self, stale_offset: Optional[float] = None, unique: bool = True) -> bytes:
         """Converts the drone's telemetry data to a Cursor-on-Target (CoT) XML message.
         
         :param stale_offset: Seconds to add to the current time to determine the stale time.
-        :param unique: If True, generate a unique UID (for moving drones to form a flight path). 
-                       If False, use a static UID (for hovering drones).
+        :param unique: If True, generate a unique UID (for moving drones forming a flight path); 
+                       if False, use a static UID (for hovering drones).
         """
         current_time = datetime.datetime.utcnow()
         if stale_offset is not None:
@@ -124,7 +126,7 @@ class Drone:
         )
 
         detail = etree.SubElement(event, 'detail')
-        # The contact element uses the static drone ID for display
+        # Use static drone ID for display purposes
         etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=self.id)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
 
@@ -248,3 +250,4 @@ class Drone:
         cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
         logger.debug("CoT XML for home of drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
         return cot_xml
+
