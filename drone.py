@@ -35,8 +35,9 @@ class Drone:
     """Represents a drone and its telemetry data."""
 
     def __init__(self, id: str, lat: float, lon: float, speed: float, vspeed: float,
-                 alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int, 
-                 home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = "", index: int = 0, runtime: int = 0):
+                 alt: float, height: float, pilot_lat: float, pilot_lon: float, description: str,
+                 mac: str, rssi: int, home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = "",
+                 index: int = 0, runtime: int = 0, caa_id: str = ""):  # <-- Added optional caa_id parameter
         self.id = id
         self.id_type = id_type
         self.index = index
@@ -61,10 +62,13 @@ class Drone:
         self.last_sent_lon = lon
         # Counter for consecutive movement updates above threshold
         self.consecutive_move_count = 0
+        # Store additional CAA info if provided
+        self.caa_id = caa_id  # <-- New attribute to store CAA information
 
     def update(self, lat: float, lon: float, speed: float, vspeed: float, alt: float,
                height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
-               home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = "", index: int = 0, runtime: int = 0):
+               home_lat: float = 0.0, home_lon: float = 0.0, id_type: str = "", index: int = 0,
+               runtime: int = 0, caa_id: str = ""):  # <-- Added caa_id parameter here as well
         """Updates the drone's telemetry data."""
         self.lat = lat
         self.lon = lon
@@ -83,6 +87,9 @@ class Drone:
         self.rssi = rssi
         self.index = index
         self.runtime = runtime
+        # If a CAA ID is provided, update our stored value.
+        if caa_id:
+            self.caa_id = caa_id  # <-- Update the CAA info if present
         # Do not update last_sent_lat/last_sent_lon or consecutive_move_count here.
 
     def to_cot_xml(self, stale_offset: Optional[float] = None, unique: bool = True) -> bytes:
