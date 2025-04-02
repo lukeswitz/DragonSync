@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-
 import sys
 import ssl
 import socket
@@ -386,33 +385,35 @@ def zmq_to_cot(
                 else:
                     # No primary serial broadcast present (CAA-only)
                     if 'mac' in drone_info and drone_info['mac']:
-                        drone_id = f"drone-{drone_info['mac']}"
-                        if drone_id in drone_manager.drone_dict:
-                            drone = drone_manager.drone_dict[drone_id]
-                            drone.update(
-                                lat=drone_info.get('lat', 0.0),
-                                lon=drone_info.get('lon', 0.0),
-                                speed=drone_info.get('speed', 0.0),
-                                vspeed=drone_info.get('vspeed', 0.0),
-                                alt=drone_info.get('alt', 0.0),
-                                height=drone_info.get('height', 0.0),
-                                pilot_lat=drone_info.get('pilot_lat', 0.0),
-                                pilot_lon=drone_info.get('pilot_lon', 0.0),
-                                description=drone_info.get('description', ""),
-                                mac=drone_info.get('mac', ""),
-                                rssi=drone_info.get('rssi', 0),
-                                home_lat=drone_info.get('home_lat', 0.0),
-                                home_lon=drone_info.get('home_lon', 0.0),
-                                id_type=drone_info.get('id_type', ""),
-                                index=drone_info.get('index', 0),
-                                runtime=drone_info.get('runtime', 0),
-                                caa_id=drone_info.get('caa', "")
-                            )
-                            logger.debug(f"Updated existing drone with CAA info: {drone_id}")
-                        else:
-                            logger.debug(f"CAA-only message received for {drone_id} but no drone record exists. Skipping for now.")
+                        updated = False
+                        for drone in drone_manager.drone_dict.values():
+                            if drone.mac == drone_info['mac']:
+                                drone.update(
+                                    lat=drone_info.get('lat', 0.0),
+                                    lon=drone_info.get('lon', 0.0),
+                                    speed=drone_info.get('speed', 0.0),
+                                    vspeed=drone_info.get('vspeed', 0.0),
+                                    alt=drone_info.get('alt', 0.0),
+                                    height=drone_info.get('height', 0.0),
+                                    pilot_lat=drone_info.get('pilot_lat', 0.0),
+                                    pilot_lon=drone_info.get('pilot_lon', 0.0),
+                                    description=drone_info.get('description', ""),
+                                    mac=drone_info.get('mac', ""),
+                                    rssi=drone_info.get('rssi', 0),
+                                    home_lat=drone_info.get('home_lat', 0.0),
+                                    home_lon=drone_info.get('home_lon', 0.0),
+                                    id_type=drone_info.get('id_type', ""),
+                                    index=drone_info.get('index', 0),
+                                    runtime=drone_info.get('runtime', 0),
+                                    caa_id=drone_info.get('caa', "")
+                                )
+                                logger.debug(f"Updated existing drone with CAA info for MAC: {drone_info['mac']}")
+                                updated = True
+                                break
+                        if not updated:
+                            logger.debug(f"CAA-only message received for MAC {drone_info['mac']} but no matching drone record exists. Skipping for now.")
                     else:
-                        logger.warning("Drone ID not found in message. Skipping.")
+                        logger.warning("CAA-only message received without a MAC. Skipping.")
 
             if status_socket and status_socket in socks and socks[status_socket] == zmq.POLLIN:
                 logger.debug("Received a message on the status socket")
