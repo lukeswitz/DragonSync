@@ -254,10 +254,12 @@ def zmq_to_cot(
                                 drone_info['id_type'] = id_type  # Store it in drone_info
                                 drone_info['mac'] = item['Basic ID'].get('MAC')
                                 drone_info['rssi'] = item['Basic ID'].get('RSSI')
-                                if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
+                                if id_type == 'Serial Number (ANSI/CTA-2063-A)':
+                                    # Use serial as primary ID
                                     drone_info['id'] = item['Basic ID'].get('id', 'unknown')
-                                elif id_type == 'CAA Assigned Registration ID' and 'id' not in drone_info:
-                                    drone_info['id'] = item['Basic ID'].get('id', 'unknown')
+                                elif id_type == 'CAA Assigned Registration ID':
+                                    # Store CAA separately
+                                    drone_info['caa'] = item['Basic ID'].get('id', 'unknown')
 
                             # Process location/vector messages
                             if 'Location/Vector Message' in item:
@@ -300,10 +302,10 @@ def zmq_to_cot(
                         drone_info['id_type'] = message['Basic ID'].get('id_type')
                         drone_info['mac'] = message['Basic ID'].get('MAC')
                         drone_info['rssi'] = message['Basic ID'].get('RSSI')
-                        if id_type == 'Serial Number (ANSI/CTA-2063-A)' and 'id' not in drone_info:
+                        if id_type == 'Serial Number (ANSI/CTA-2063-A)':
                             drone_info['id'] = message['Basic ID'].get('id', 'unknown')
-                        elif id_type == 'CAA Assigned Registration ID' and 'id' not in drone_info:
-                            drone_info['id'] = message['Basic ID'].get('id', 'unknown')
+                        elif id_type == 'CAA Assigned Registration ID':
+                            drone_info['caa'] = message['Basic ID'].get('id', 'unknown')
 
                     # Process location/vector messages
                     if 'Location/Vector Message' in message:
@@ -327,14 +329,14 @@ def zmq_to_cot(
                     logger.error("Unexpected message format; expected dict or list.")
                     continue  # Skip this message
 
-                # Enforce 'drone-' prefix once after parsing all IDs
+                # --- Updated logic for handling serial vs. CAA-only broadcasts ---
                 if 'id' in drone_info:
+                    # We have a serial broadcast.
                     if not drone_info['id'].startswith('drone-'):
                         drone_info['id'] = f"drone-{drone_info['id']}"
                         logger.debug(f"Ensured drone id with prefix: {drone_info['id']}")
                     else:
                         logger.debug(f"Drone id already has prefix: {drone_info['id']}")
-
                     drone_id = drone_info['id']
                     if drone_id in drone_manager.drone_dict:
                         drone = drone_manager.drone_dict[drone_id]
@@ -354,7 +356,8 @@ def zmq_to_cot(
                             home_lon=drone_info.get('home_lon', 0.0),
                             id_type=drone_info.get('id_type', ""),
                             index=drone_info.get('index', 0),
-                            runtime=drone_info.get('runtime', 0)
+                            runtime=drone_info.get('runtime', 0),
+                            caa_id=drone_info.get('caa', "")
                         )
                         logger.debug(f"Updated drone: {drone_id}")
                     else:
@@ -375,12 +378,41 @@ def zmq_to_cot(
                             home_lon=drone_info.get('home_lon', 0.0),
                             id_type=drone_info.get('id_type', ""),
                             index=drone_info.get('index', 0),
-                            runtime=drone_info.get('runtime', 0)
+                            runtime=drone_info.get('runtime', 0),
+                            caa_id=drone_info.get('caa', "")
                         )
                         drone_manager.update_or_add_drone(drone_id, drone)
                         logger.debug(f"Added new drone: {drone_id}")
                 else:
-                    logger.warning("Drone ID not found in message. Skipping.")
+                    # No primary serial broadcast present (CAA-only)
+                    if 'mac' in drone_info and drone_info['mac']:
+                        drone_id = f"drone-{drone_info['mac']}"
+                        if drone_id in drone_manager.drone_dict:
+                            drone = drone_manager.drone_dict[drone_id]
+                            drone.update(
+                                lat=drone_info.get('lat', 0.0),
+                                lon=drone_info.get('lon', 0.0),
+                                speed=drone_info.get('speed', 0.0),
+                                vspeed=drone_info.get('vspeed', 0.0),
+                                alt=drone_info.get('alt', 0.0),
+                                height=drone_info.get('height', 0.0),
+                                pilot_lat=drone_info.get('pilot_lat', 0.0),
+                                pilot_lon=drone_info.get('pilot_lon', 0.0),
+                                description=drone_info.get('description', ""),
+                                mac=drone_info.get('mac', ""),
+                                rssi=drone_info.get('rssi', 0),
+                                home_lat=drone_info.get('home_lat', 0.0),
+                                home_lon=drone_info.get('home_lon', 0.0),
+                                id_type=drone_info.get('id_type', ""),
+                                index=drone_info.get('index', 0),
+                                runtime=drone_info.get('runtime', 0),
+                                caa_id=drone_info.get('caa', "")
+                            )
+                            logger.debug(f"Updated existing drone with CAA info: {drone_id}")
+                        else:
+                            logger.debug(f"CAA-only message received for {drone_id} but no drone record exists. Skipping for now.")
+                    else:
+                        logger.warning("Drone ID not found in message. Skipping.")
 
             if status_socket and status_socket in socks and socks[status_socket] == zmq.POLLIN:
                 logger.debug("Received a message on the status socket")
@@ -543,4 +575,3 @@ if __name__ == "__main__":
         inactivity_timeout=config["inactivity_timeout"],
         multicast_interface=config["tak_multicast_interface"]
     )
-    
