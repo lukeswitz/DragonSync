@@ -250,4 +250,3 @@ class Drone:
         cot_xml = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
         logger.debug("CoT XML for home of drone '%s':\n%s", self.id, cot_xml.decode('utf-8'))
         return cot_xml
-
