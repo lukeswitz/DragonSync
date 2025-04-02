@@ -103,7 +103,7 @@ class DroneManager:
             else:
                 drone.consecutive_move_count = 0
 
-            # Decide whether to send a unique (flight path) or static update.
+            # Decide whether to send a full update.
             if current_time - drone.last_sent_time >= self.rate_limit:
                 if drone.consecutive_move_count >= self.min_consecutive_for_unique:
                     # Drone is consistently moving; send a unique update.
@@ -145,9 +145,10 @@ class DroneManager:
                         self.cot_messenger.send_cot(home_xml)
                     logger.debug(f"Sent home CoT update for drone {drone_id}.")
 
-            # For drones that are active but not yet due for a full update,
-            # send less frequent keep-alive updates.
-            elif current_time - drone.last_sent_time >= self.keep_alive_interval:
+            # For drones that are active but not due for a full update,
+            # send keep-alive updates based on last_keepalive_time.
+            if current_time - drone.last_keepalive_time >= self.keep_alive_interval:
+                time_since_update = current_time - drone.last_update_time
                 if drone.consecutive_move_count >= self.min_consecutive_for_unique:
                     cot_xml = drone.to_cot_xml(
                         stale_offset=self.inactivity_timeout - time_since_update,
@@ -156,17 +157,17 @@ class DroneManager:
                     drone.last_sent_lat = drone.lat
                     drone.last_sent_lon = drone.lon
                     drone.consecutive_move_count = 0
-                    logger.debug(f"Sent unique keep-alive CoT update for moving drone {drone_id} (position change: {position_change:.8f}).")
+                    logger.debug(f"Sent unique keep-alive CoT update for moving drone {drone_id}.")
                 else:
                     cot_xml = drone.to_cot_xml(
                         stale_offset=self.inactivity_timeout - time_since_update,
                         unique=False
                     )
-                    logger.debug(f"Sent static keep-alive CoT update for hovering drone {drone_id} (position change: {position_change:.8f}).")
+                    logger.debug(f"Sent static keep-alive CoT update for hovering drone {drone_id}.")
                 if self.cot_messenger:
                     self.cot_messenger.send_cot(cot_xml)
-                drone.last_sent_time = current_time
-
+                drone.last_keepalive_time = current_time
+                # Also send pilot and home updates if applicable.
                 if drone.pilot_lat != 0.0 or drone.pilot_lon != 0.0:
                     pilot_xml = drone.to_pilot_cot_xml(
                         stale_offset=self.inactivity_timeout - time_since_update
@@ -174,7 +175,6 @@ class DroneManager:
                     if self.cot_messenger:
                         self.cot_messenger.send_cot(pilot_xml)
                     logger.debug(f"Sent keep-alive pilot CoT update for drone {drone_id}.")
-
                 if drone.home_lat != 0.0 or drone.home_lon != 0.0:
                     home_xml = drone.to_home_cot_xml(
                         stale_offset=self.inactivity_timeout - time_since_update
