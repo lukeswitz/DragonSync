@@ -48,9 +48,8 @@ class DroneManager:
         """
         self.drones = deque(maxlen=max_drones)
         self.drone_dict = {}
-        self.rate_limit = rate_limit          # Update frequency
-        self.inactivity_timeout = inactivity_timeout  # Time before a drone is considered stale
-        self.keep_alive_interval = 10.0       # Interval for sending keep-alive CoT updates
+        self.rate_limit = rate_limit          # Update frequency (in seconds)
+        self.inactivity_timeout = inactivity_timeout  # Time before a drone is considered stale (in seconds)
         self.cot_messenger = cot_messenger
 
     def update_or_add_drone(self, drone_id: str, drone_data: Drone):
@@ -74,7 +73,10 @@ class DroneManager:
             logger.debug(f"Updated drone: {drone_id}")
 
     def send_updates(self):
-        """Sends updates to the TAK server or multicast address."""
+        """Sends regular CoT updates to the TAK server or multicast address.
+        
+        If a drone stops sending updates, its stale timeout will cause ATAK to remove the event.
+        """
         current_time = time.time()
         drones_to_remove = []
 
@@ -122,33 +124,6 @@ class DroneManager:
                     if self.cot_messenger:
                         self.cot_messenger.send_cot(home_xml)
                     logger.debug(f"Sent home CoT update for drone {drone_id}.")
-
-            # Send keep-alive updates if due.
-            if current_time - drone.last_keepalive_time >= self.keep_alive_interval:
-                time_since_update = current_time - drone.last_update_time
-                cot_xml = drone.to_cot_xml(
-                    stale_offset=self.inactivity_timeout - time_since_update
-                )
-                if self.cot_messenger:
-                    self.cot_messenger.send_cot(cot_xml)
-                drone.last_keepalive_time = current_time
-                logger.debug(f"Sent keep-alive CoT update for drone {drone_id}.")
-
-                # Also send pilot and home updates if applicable.
-                if drone.pilot_lat != 0.0 or drone.pilot_lon != 0.0:
-                    pilot_xml = drone.to_pilot_cot_xml(
-                        stale_offset=self.inactivity_timeout - time_since_update
-                    )
-                    if self.cot_messenger:
-                        self.cot_messenger.send_cot(pilot_xml)
-                    logger.debug(f"Sent keep-alive pilot CoT update for drone {drone_id}.")
-                if drone.home_lat != 0.0 or drone.home_lon != 0.0:
-                    home_xml = drone.to_home_cot_xml(
-                        stale_offset=self.inactivity_timeout - time_since_update
-                    )
-                    if self.cot_messenger:
-                        self.cot_messenger.send_cot(home_xml)
-                    logger.debug(f"Sent keep-alive home CoT update for drone {drone_id}.")
 
         # Remove inactive drones after processing updates.
         for drone_id in drones_to_remove:
