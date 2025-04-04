@@ -57,15 +57,10 @@ class Drone:
         self.description = description
         self.last_update_time = time.time()
         self.last_sent_time = 0.0  # Track last time an update was sent
-        # Track last sent position for flight updates
-        self.last_sent_lat = lat
-        self.last_sent_lon = lon
-        # Counter for consecutive movement updates above threshold
-        self.consecutive_move_count = 0
-        # Store additional CAA info if provided
-        self.caa_id = caa_id
-        # Track the last time a keep-alive message was generated
-        self.last_keepalive_time = 0.0
+        self.last_sent_lat = lat   # Track last sent latitude
+        self.last_sent_lon = lon   # Track last sent longitude
+        self.caa_id = caa_id       # Additional CAA info if provided
+        self.last_keepalive_time = 0.0  # Track the last time a keep-alive message was generated
 
     def update(self, lat: float, lon: float, speed: float, vspeed: float, alt: float,
                height: float, pilot_lat: float, pilot_lon: float, description: str, mac: str, rssi: int,
@@ -89,16 +84,13 @@ class Drone:
         self.rssi = rssi
         self.index = index
         self.runtime = runtime
-        # If a CAA ID is provided, update our stored value.
         if caa_id:
             self.caa_id = caa_id
 
-    def to_cot_xml(self, stale_offset: Optional[float] = None, unique: bool = True) -> bytes:
+    def to_cot_xml(self, stale_offset: Optional[float] = None) -> bytes:
         """Converts the drone's telemetry data to a Cursor-on-Target (CoT) XML message.
         
         :param stale_offset: Seconds to add to the current time to determine the stale time.
-        :param unique: If True, generate a unique UID (for moving drones forming a flight path); 
-                       if False, use a static UID (for hovering drones).
         """
         current_time = datetime.datetime.utcnow()
         if stale_offset is not None:
@@ -106,15 +98,8 @@ class Drone:
         else:
             stale_time = current_time + datetime.timedelta(minutes=10)
 
-        # For non-unique (keep-alive) updates, update the last_keepalive_time.
-        if not unique:
-            self.last_keepalive_time = time.time()
-
-        if unique:
-            unique_suffix = current_time.strftime("%Y%m%dT%H%M%S%fZ")
-            uid = f"{self.id}-{unique_suffix}"
-        else:
-            uid = self.id
+        # Use static UID for the drone event.
+        uid = self.id
 
         event = etree.Element(
             'event',
@@ -127,7 +112,7 @@ class Drone:
             how='m-g'
         )
 
-        point = etree.SubElement(
+        etree.SubElement(
             event,
             'point',
             lat=str(self.lat),
@@ -138,7 +123,6 @@ class Drone:
         )
 
         detail = etree.SubElement(event, 'detail')
-        # Use static drone ID for display purposes
         etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=self.id)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
 
@@ -187,7 +171,7 @@ class Drone:
             how='m-g'
         )
 
-        point = etree.SubElement(
+        etree.SubElement(
             event,
             'point',
             lat=str(self.pilot_lat),
@@ -237,7 +221,7 @@ class Drone:
             how='m-g'
         )
 
-        point = etree.SubElement(
+        etree.SubElement(
             event,
             'point',
             lat=str(self.home_lat),
