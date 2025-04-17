@@ -77,7 +77,6 @@ def resolve_interface_to_ip(interface: str) -> Optional[str]:
 
 class CotMessenger:
     """Handles sending CoT messages to TAK servers and multicast addresses."""
-
     def __init__(
         self,
         tak_client: Optional[TAKClient] = None,
@@ -123,9 +122,17 @@ class CotMessenger:
                             self.multicast_socket.setsockopt(
                                 socket.IPPROTO_IP, socket.IP_MULTICAST_IF, packed_if
                             )
-                            logger.debug(
-                                f"Set multicast interface to {interface_ip}"
-                            )
+                            logger.debug(f"Set multicast interface to {interface_ip}")
+
+                            # --- new: if using loopback, enable multicast loopback ---
+                            if interface_ip == "127.0.0.1":
+                                self.multicast_socket.setsockopt(
+                                    socket.IPPROTO_IP,
+                                    socket.IP_MULTICAST_LOOP,
+                                    1
+                                )
+                                logger.debug("Enabled IP_MULTICAST_LOOP on loopback")
+
                         except Exception as e:
                             logger.error(
                                 f"Failed to set multicast interface '{self.multicast_interface}': {e}"
@@ -134,8 +141,10 @@ class CotMessenger:
                         logger.error(
                             f"Could not resolve '{self.multicast_interface}' to a valid IP."
                         )
+
                 logger.debug(
-                    f"Initialized persistent multicast socket for {self.multicast_address}:{self.multicast_port}"
+                    f"Initialized persistent multicast socket for " +
+                    f"{self.multicast_address}:{self.multicast_port}"
                 )
             except Exception as e:
                 logger.error(f"Failed to initialize multicast socket: {e}")
