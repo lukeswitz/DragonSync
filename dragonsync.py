@@ -246,7 +246,7 @@ def zmq_to_cot(
     if status_socket:
         poller.register(status_socket, zmq.POLLIN)
 
-    try:
+       try:
         while True:
             socks = dict(poller.poll(timeout=1000))
             if telemetry_socket in socks and socks[telemetry_socket] == zmq.POLLIN:
@@ -269,15 +269,20 @@ def zmq_to_cot(
 
                             if 'Basic ID' in item:
                                 basic = item['Basic ID']
-                                raw_ua = basic.get('ua_type')
-                                try:
-                                    ua_code = int(raw_ua)
-                                except (TypeError, ValueError):
-                                    ua_code = next(
-                                        (k for k, v in UA_TYPE_MAPPING.items()
-                                         if v.lower() == str(raw_ua).lower()),
-                                        None
-                                    )
+                                raw_ua = basic.get('ua_type', None)
+                                ua_code = None
+                                if raw_ua is not None:
+                                    try:
+                                        ua_code = int(raw_ua)
+                                    except (TypeError, ValueError):
+                                        ua_code = next(
+                                            (k for k, v in UA_TYPE_MAPPING.items()
+                                             if v.lower() == str(raw_ua).lower()),
+                                            None
+                                        )
+                                # reject out‑of‑range codes
+                                if ua_code not in UA_TYPE_MAPPING:
+                                    ua_code = None
                                 ua_name = UA_TYPE_MAPPING.get(ua_code, 'Unknown')
                                 drone_info['ua_type']      = ua_code
                                 drone_info['ua_type_name'] = ua_name
@@ -326,15 +331,19 @@ def zmq_to_cot(
 
                     if 'Basic ID' in message:
                         basic = message['Basic ID']
-                        raw_ua = basic.get('ua_type')
-                        try:
-                            ua_code = int(raw_ua)
-                        except (TypeError, ValueError):
-                            ua_code = next(
-                                (k for k, v in UA_TYPE_MAPPING.items()
-                                 if v.lower() == str(raw_ua).lower()),
-                                None
-                            )
+                        raw_ua = basic.get('ua_type', None)
+                        ua_code = None
+                        if raw_ua is not None:
+                            try:
+                                ua_code = int(raw_ua)
+                            except (TypeError, ValueError):
+                                ua_code = next(
+                                    (k for k, v in UA_TYPE_MAPPING.items()
+                                     if v.lower() == str(raw_ua).lower()),
+                                    None
+                                )
+                        if ua_code not in UA_TYPE_MAPPING:
+                            ua_code = None
                         ua_name = UA_TYPE_MAPPING.get(ua_code, 'Unknown')
                         drone_info['ua_type']      = ua_code
                         drone_info['ua_type_name'] = ua_name
@@ -432,9 +441,9 @@ def zmq_to_cot(
                     # No primary serial broadcast present (CAA-only)
                     if 'mac' in drone_info and drone_info['mac']:
                         updated = False
-                        for drone in drone_manager.drone_dict.values():
-                            if drone.mac == drone_info['mac']:
-                                drone.update(
+                        for d in drone_manager.drone_dict.values():
+                            if d.mac == drone_info['mac']:
+                                d.update(
                                     lat=drone_info.get('lat', 0.0),
                                     lon=drone_info.get('lon', 0.0),
                                     speed=drone_info.get('speed', 0.0),
@@ -449,6 +458,8 @@ def zmq_to_cot(
                                     home_lat=drone_info.get('home_lat', 0.0),
                                     home_lon=drone_info.get('home_lon', 0.0),
                                     id_type=drone_info.get('id_type', ""),
+                                    ua_type=drone_info.get('ua_type'),
+                                    ua_type_name=drone_info.get('ua_type_name', ""),
                                     index=drone_info.get('index', 0),
                                     runtime=drone_info.get('runtime', 0),
                                     caa_id=drone_info.get('caa', "")
