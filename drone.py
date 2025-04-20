@@ -312,7 +312,7 @@ class Drone:
             'event',
             version='2.0',
             uid=uid,
-            type='a-n-F',
+            type='b-m-p-s-m',
             time=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -363,7 +363,7 @@ class Drone:
             'event',
             version='2.0',
             uid=uid,
-            type='a-n-F',
+            type='b-m-p-s-m',
             time=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -389,7 +389,7 @@ class Drone:
         etree.SubElement(
             detail,
             'usericon',
-            iconsetpath='com.atakmap.android.maps.public/Military/House.png'
+            iconsetpath='com.atakmap.android.maps.public/Civilian/House.png'
         )
 
         xml_bytes = etree.tostring(event, pretty_print=True,
