@@ -243,7 +243,7 @@ class Drone:
             'event',
             version='2.0',
             uid=self.id,
-            type='b-m-p-s-m',
+            type='a-n-F',
             time=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -261,7 +261,7 @@ class Drone:
         )
 
         detail = etree.SubElement(event, 'detail')
-        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=self.id)
+        etree.SubElement(detail, 'contact', callsign=self.id)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
 
         # include <track> so ATAK will draw a track
@@ -312,7 +312,7 @@ class Drone:
             'event',
             version='2.0',
             uid=uid,
-            type='b-m-p-s-m',
+            type='a-n-F',
             time=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -330,7 +330,7 @@ class Drone:
 
         detail = etree.SubElement(event, 'detail')
         callsign = f"pilot-{base_id}"
-        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=callsign)
+        etree.SubElement(detail, 'contact', callsign=callsign)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(
             f"Pilot location for drone {self.id}"
@@ -338,7 +338,7 @@ class Drone:
         etree.SubElement(
             detail,
             'usericon',
-            iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/Soldier.png'
+            iconsetpath='com.atakmap.android.maps.public/Military/Soldier.png'
         )
 
         xml_bytes = etree.tostring(event, pretty_print=True,
@@ -363,7 +363,7 @@ class Drone:
             'event',
             version='2.0',
             uid=uid,
-            type='b-m-p-s-m',
+            type='a-n-F',
             time=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -381,7 +381,7 @@ class Drone:
 
         detail = etree.SubElement(event, 'detail')
         callsign = f"home-{base_id}"
-        etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=callsign)
+        etree.SubElement(detail, 'contact', callsign=callsign)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(
             f"Home location for drone {self.id}"
@@ -389,7 +389,7 @@ class Drone:
         etree.SubElement(
             detail,
             'usericon',
-            iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/House.png'
+            iconsetpath='com.atakmap.android.maps.public/Military/House.png'
         )
 
         xml_bytes = etree.tostring(event, pretty_print=True,
