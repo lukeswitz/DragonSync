@@ -338,7 +338,7 @@ class Drone:
         etree.SubElement(
             detail,
             'usericon',
-            iconsetpath='com.atakmap.android.maps.public/Military/Soldier.png'
+            iconsetpath='com.atakmap.android.maps.public/Civilian/Person.png'
         )
 
         xml_bytes = etree.tostring(event, pretty_print=True,
