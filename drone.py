@@ -31,6 +31,26 @@ from lxml import etree
 
 logger = logging.getLogger(__name__)
 
+# Map our UA_TYPE_MAPPING indices (0–15) to CoT event types for drones
+# Fallback to rotary‑wing VTOL if unknown or not in map
+UA_COT_TYPE_MAP = {
+    1: 'a-f-A-f',       # Aeroplane / fixed wing
+    2: 'a-u-A-M-H-R',   # Helicopter / multirotor
+    3: 'a-u-A-M-H-R',   # Gyroplane (treat as rotorcraft)
+    4: 'a-u-A-M-H-R',   # VTOL
+    5: 'a-f-A-f',       # Ornithopter (treat as fixed wing)
+    6: 'a-f-A-f',       # Glider
+    7: 'b-m-p-s-m',     # Kite (surface dot)
+    8: 'b-m-p-s-m',     # Free balloon
+    9: 'b-m-p-s-m',     # Captive balloon
+    10: 'b-m-p-s-m',    # Airship
+    11: 'b-m-p-s-m',    # Parachute
+    12: 'b-m-p-s-m',    # Rocket
+    13: 'b-m-p-s-m',    # Tethered powered aircraft
+    14: 'b-m-p-s-m',    # Ground obstacle
+    15: 'b-m-p-s-m',    # Other
+}
+
 class Drone:
     """Represents a drone and its telemetry data."""
 
@@ -239,11 +259,14 @@ class Drone:
         else:
             stale = now + datetime.timedelta(minutes=10)
 
+        # pick CoT type by UA index, fallback to rotary‑wing VTOL
+        cot_type = UA_COT_TYPE_MAP.get(self.ua_type, 'a-u-A-M-H-R')
+
         event = etree.Element(
             'event',
             version='2.0',
             uid=self.id,
-            type='a-n-F',
+            type=cot_type,
             time=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=now.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -284,11 +307,7 @@ class Drone:
         )
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(remarks)
         etree.SubElement(detail, 'color', argb='-256')
-        etree.SubElement(
-            detail,
-            'usericon',
-            iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/UAV_quad.png'
-        )
+        # dropped <usericon> so icon derives from event type
 
         xml_bytes = etree.tostring(event, pretty_print=True,
                                    xml_declaration=True, encoding='UTF-8')
@@ -335,11 +354,6 @@ class Drone:
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(
             f"Pilot location for drone {self.id}"
         )
-        etree.SubElement(
-            detail,
-            'usericon',
-            iconsetpath='com.atakmap.android.maps.public/Civilian/Person.png'
-        )
 
         xml_bytes = etree.tostring(event, pretty_print=True,
                                    xml_declaration=True, encoding='UTF-8')
@@ -385,11 +399,6 @@ class Drone:
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(
             f"Home location for drone {self.id}"
-        )
-        etree.SubElement(
-            detail,
-            'usericon',
-            iconsetpath='com.atakmap.android.maps.public/Civilian/House.png'
         )
 
         xml_bytes = etree.tostring(event, pretty_print=True,
