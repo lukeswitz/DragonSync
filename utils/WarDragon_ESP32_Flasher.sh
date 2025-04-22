@@ -8,19 +8,14 @@ SERVICE_NAME="zmq-decoder.service"
 ESP_PORT="/dev/esp0"
 
 # Firmware options
-declare -A FIRMWARE_OPTIONS=(
-    [1]="WiFi RID Scanner"
-    [2]="WiFI/BT Dual-RID Scanner"
+FIRMWARE_OPTIONS=("WiFi RID Scanner" "WiFI/BT Dual-RID Scanner")
+FIRMWARE_URLS=(
+    "https://github.com/alphafox02/T-Halow/raw/refs/heads/wifi_rid/firmware/firmware_T-Halow_DragonOS_RID_Scanner_WiFi.bin"
+    "https://github.com/lukeswitz/T-Halow/raw/refs/heads/master/firmware/tHalow_s3dualcoreRIDfirmware.bin"
 )
-
-declare -A FIRMWARE_URLS=(
-    [1]="https://github.com/alphafox02/T-Halow/raw/refs/heads/wifi_rid/firmware/firmware_T-Halow_DragonOS_RID_Scanner_WiFi.bin"
-    [2]="https://github.com/lukeswitz/T-Halow/raw/refs/heads/master/firmware/tHalow_s3dualcoreRIDfirmware.bin"
-)
-
-declare -A FIRMWARE_FILES=(
-    [1]="firmware_T-Halow_DragonOS_RID_Scanner_WiFi.bin"
-    [2]="tHalow_s3dualcoreRIDfirmware.bin"
+FIRMWARE_FILES=(
+    "firmware_T-Halow_DragonOS_RID_Scanner_WiFi.bin"
+    "tHalow_s3dualcoreRIDfirmware.bin"
 )
 
 # Check if esptool.py is available in PATH
