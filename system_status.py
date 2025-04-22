@@ -75,7 +75,7 @@ class SystemStatus:
             'event',
             version='2.0',
             uid=self.id,
-            type='b-m-p-s-m',
+            type='b-s-s-s',
             time=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
