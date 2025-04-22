@@ -44,20 +44,28 @@ else
         exit 1
     fi
 
-    ESPTOOL_CMD="$ESPTOOL_DIR/esptool.py"
+    if command -v esptool.py >/dev/null 2>&1; then
+        echo "Using system esptool.py"
+        ESPTOOL_CMD="esptool.py"
+    else
+        if [ ! -f "$ESPTOOL_DIR/esptool.py" ]; then
+            echo "Cloning esptool..."
+            git clone "$ESPTOOL_REPO" "$ESPTOOL_DIR"
+        fi
+        ESPTOOL_CMD="$ESPTOOL_DIR/esptool.py"
+    fi
 fi
 
 # Display firmware options
 echo "Available firmware options:"
-for key in "${!FIRMWARE_OPTIONS[@]}"; do
-    echo "  $key) ${FIRMWARE_OPTIONS[$key]}"
+for i in "${!FIRMWARE_OPTIONS[@]}"; do
+    echo "  $((i + 1))) ${FIRMWARE_OPTIONS[$i]}"
 done
 
-# Get user input
 read -p "Select firmware option (1-${#FIRMWARE_OPTIONS[@]}): " choice
+choice=$((choice - 1))
 
-# Validate input
-if [[ ! "$choice" =~ ^[1-${#FIRMWARE_OPTIONS[@]}]$ ]]; then
+if [[ $choice -lt 0 || $choice -ge ${#FIRMWARE_OPTIONS[@]} ]]; then
     echo "Invalid selection. Exiting."
     exit 1
 fi
@@ -80,7 +88,7 @@ sudo systemctl stop "$SERVICE_NAME" || echo "$SERVICE_NAME is not running or cou
 
 # Flash the firmware using esptool
 echo "Flashing firmware to the device..."
-python3 "$ESPTOOL_CMD" \
+"$ESPTOOL_CMD" \
     --chip esp32s3 \
     --port "$ESP_PORT" \
     --baud 115200 \
