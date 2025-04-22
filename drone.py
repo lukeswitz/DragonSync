@@ -351,6 +351,11 @@ class Drone:
         callsign = f"pilot-{base_id}"
         etree.SubElement(detail, 'contact', callsign=callsign)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
+        etree.SubElement(
+        detail,
+        'usericon',
+        iconsetpath='com.atakmap.android.maps.public/Civilian/Person.png'
+        )
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(
             f"Pilot location for drone {self.id}"
         )
@@ -397,6 +402,11 @@ class Drone:
         callsign = f"home-{base_id}"
         etree.SubElement(detail, 'contact', callsign=callsign)
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
+        etree.SubElement(
+        detail,
+        'usericon',
+        iconsetpath='com.atakmap.android.maps.public/Civilian/House.png'
+        )
         etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(
             f"Home location for drone {self.id}"
         )
