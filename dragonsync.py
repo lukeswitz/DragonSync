@@ -54,6 +54,25 @@ from manager import DroneManager
 from messaging import CotMessenger
 from utils import load_config, validate_config, get_str, get_int, get_float, get_bool
 
+UA_TYPE_MAPPING = {
+    0: 'No UA type defined',
+    1: 'Aeroplane/Airplane (Fixed wing)',
+    2: 'Helicopter or Multirotor',
+    3: 'Gyroplane',
+    4: 'VTOL (Vertical Take-Off and Landing)',
+    5: 'Ornithopter',
+    6: 'Glider',
+    7: 'Kite',
+    8: 'Free Balloon',
+    9: 'Captive Balloon',
+    10: 'Airship (Blimp)',
+    11: 'Free Fall/Parachute',
+    12: 'Rocket',
+    13: 'Tethered powered aircraft',
+    14: 'Ground Obstacle',
+    15: 'Other type',
+}
+
 # Setup logging
 def setup_logging(debug: bool):
     """Set up logging configuration."""
@@ -239,90 +258,178 @@ def zmq_to_cot(
 
                 # Check if message is a list (original format) or dict (ESP32 format)
                 if isinstance(message, list):
-                    # Original format: list of dictionaries
                     for item in message:
-                        if isinstance(item, dict):
-                            # Process each item as a dictionary
-                            if 'MAC' in item:
-                                drone_info['mac'] = item['MAC']
-                            if 'RSSI' in item:
-                                drone_info['rssi'] = item['RSSI']
-                                
-                            if 'Basic ID' in item:
-                                id_type = item['Basic ID'].get('id_type')  # Get id_type first
-                                drone_info['id_type'] = id_type  # Store it in drone_info
-                                drone_info['mac'] = item['Basic ID'].get('MAC')
-                                drone_info['rssi'] = item['Basic ID'].get('RSSI')
-                                if id_type == 'Serial Number (ANSI/CTA-2063-A)':
-                                    # Use serial as primary ID
-                                    drone_info['id'] = item['Basic ID'].get('id', 'unknown')
-                                elif id_type == 'CAA Assigned Registration ID':
-                                    # Store CAA separately
-                                    drone_info['caa'] = item['Basic ID'].get('id', 'unknown')
-
-                            # Process location/vector messages
-                            if 'Location/Vector Message' in item:
-                                drone_info['lat'] = get_float(item['Location/Vector Message'].get('latitude', 0.0))
-                                drone_info['lon'] = get_float(item['Location/Vector Message'].get('longitude', 0.0))
-                                drone_info['speed'] = get_float(item['Location/Vector Message'].get('speed', 0.0))
-                                drone_info['vspeed'] = get_float(item['Location/Vector Message'].get('vert_speed', 0.0))
-                                drone_info['alt'] = get_float(item['Location/Vector Message'].get('geodetic_altitude', 0.0))
-                                drone_info['height'] = get_float(item['Location/Vector Message'].get('height_agl', 0.0))
-
-                            # Process Self-ID messages
-                            if 'Self-ID Message' in item:
-                                drone_info['description'] = item['Self-ID Message'].get('text', "")
-
-                            # Process System messages
-                            if 'System Message' in item:
-                                drone_info['pilot_lat'] = get_float(item['System Message'].get('latitude', 0.0))
-                                drone_info['pilot_lon'] = get_float(item['System Message'].get('longitude', 0.0))
-                                drone_info['home_lat']  = get_float(item['System Message'].get('home_lat', 0.0))
-                                drone_info['home_lon']  = get_float(item['System Message'].get('home_lon', 0.0))
-                        else:
+                        if not isinstance(item, dict):
                             logger.error("Unexpected item type in message list; expected dict.")
+                            continue
 
+                        # ─── Common fields ─────────────────────────────────────────
+                        if 'MAC' in item:
+                            drone_info['mac'] = item['MAC']
+                        if 'RSSI' in item:
+                            drone_info['rssi'] = item['RSSI']
+
+                        # ─── Basic ID ──────────────────────────────────────────────
+                        if 'Basic ID' in item:
+                            basic = item['Basic ID']
+
+                            # UA type parsing (0–15 or exact name)
+                            raw_ua = basic.get('ua_type', None)
+                            ua_code = None
+                            if raw_ua is not None:
+                                try:
+                                    ua_code = int(raw_ua)
+                                except (TypeError, ValueError):
+                                    ua_code = next(
+                                        (k for k, v in UA_TYPE_MAPPING.items()
+                                         if v.lower() == str(raw_ua).lower()),
+                                        None
+                                    )
+                            # reject out‑of‑range
+                            if ua_code not in UA_TYPE_MAPPING:
+                                ua_code = None
+                            ua_name = UA_TYPE_MAPPING.get(ua_code, 'Unknown')
+                            drone_info['ua_type']      = ua_code
+                            drone_info['ua_type_name'] = ua_name
+
+                            # ID, MAC, RSSI
+                            id_type = basic.get('id_type')
+                            drone_info['id_type'] = id_type
+                            drone_info['mac']     = basic.get('MAC')
+                            drone_info['rssi']    = basic.get('RSSI')
+                            if id_type == 'Serial Number (ANSI/CTA-2063-A)':
+                                drone_info['id'] = basic.get('id', 'unknown')
+                            elif id_type == 'CAA Assigned Registration ID':
+                                drone_info['caa'] = basic.get('id', 'unknown')
+
+                        # ─── Operator ID Message ───────────────────────────────────
+                        if 'Operator ID Message' in item:
+                            op = item['Operator ID Message']
+                            drone_info['operator_id_type'] = op.get('operator_id_type', "")
+                            drone_info['operator_id']      = op.get('operator_id', "")
+
+                        # ─── Location/Vector Message ────────────────────────────────
+                        if 'Location/Vector Message' in item:
+                            loc = item['Location/Vector Message']
+                            # basic telemetry
+                            drone_info['lat']    = get_float(loc.get('latitude', 0.0))
+                            drone_info['lon']    = get_float(loc.get('longitude', 0.0))
+                            drone_info['speed']  = get_float(loc.get('speed', 0.0))
+                            drone_info['vspeed'] = get_float(loc.get('vert_speed', 0.0))
+                            drone_info['alt']    = get_float(loc.get('geodetic_altitude', 0.0))
+                            drone_info['height'] = get_float(loc.get('height_agl', 0.0))
+
+                            # extra Remote ID fields
+                            drone_info['op_status']          = loc.get('op_status', "")
+                            drone_info['height_type']        = loc.get('height_type', "")
+                            drone_info['ew_dir']             = loc.get('ew_dir_segment', "")
+                            drone_info['direction']          = get_int(loc.get('direction', None), None)
+                            drone_info['speed_multiplier']   = get_float(
+                                loc.get('speed_multiplier', "0").split()[0]
+                            )
+                            drone_info['pressure_altitude']  = get_float(
+                                loc.get('pressure_altitude', "0").split()[0]
+                            )
+                            drone_info['vertical_accuracy']   = loc.get('vertical_accuracy', "")
+                            drone_info['horizontal_accuracy'] = loc.get('horizontal_accuracy', "")
+                            drone_info['baro_accuracy']       = loc.get('baro_accuracy', "")
+                            drone_info['speed_accuracy']      = loc.get('speed_accuracy', "")
+                            drone_info['timestamp']           = loc.get('timestamp', "")
+                            drone_info['timestamp_accuracy']  = loc.get('timestamp_accuracy', "")
+
+                        # ─── Self‑ID Message ───────────────────────────────────────
+                        if 'Self-ID Message' in item:
+                            drone_info['description'] = item['Self-ID Message'].get('text', "")
+
+                        # ─── System Message ─────────────────────────────────────────
+                        if 'System Message' in item:
+                            sysm = item['System Message']
+                            drone_info['pilot_lat'] = get_float(sysm.get('latitude', 0.0))
+                            drone_info['pilot_lon'] = get_float(sysm.get('longitude', 0.0))
+                            drone_info['home_lat']  = get_float(sysm.get('home_lat', 0.0))
+                            drone_info['home_lon']  = get_float(sysm.get('home_lon', 0.0))
+
+                # ─── ESP32 JSON format ───────────────────────────────────────
                 elif isinstance(message, dict):
-                    drone_info['index'] = message.get('index', 0)
-                    drone_info['runtime'] = message.get('runtime', 0)  
+                    drone_info['index']   = message.get('index', 0)
+                    drone_info['runtime'] = message.get('runtime', 0)
 
                     if "AUX_ADV_IND" in message:
-                        # Get RSSI from raw message
                         if "rssi" in message["AUX_ADV_IND"]:
                             drone_info['rssi'] = message["AUX_ADV_IND"]["rssi"]
-                        # Get MAC from raw message
                         if "aext" in message and "AdvA" in message["aext"]:
-                            mac = message["aext"]["AdvA"].split()[0]  # Extract MAC before " (Public)"
-                            drone_info['mac'] = mac
+                            drone_info['mac'] = message["aext"]["AdvA"].split()[0]
 
-                    # ESP32 format: single dictionary
                     if 'Basic ID' in message:
-                        id_type = message['Basic ID'].get('id_type')
-                        drone_info['id_type'] = message['Basic ID'].get('id_type')
-                        drone_info['mac'] = message['Basic ID'].get('MAC')
-                        drone_info['rssi'] = message['Basic ID'].get('RSSI')
-                        if id_type == 'Serial Number (ANSI/CTA-2063-A)':
-                            drone_info['id'] = message['Basic ID'].get('id', 'unknown')
-                        elif id_type == 'CAA Assigned Registration ID':
-                            drone_info['caa'] = message['Basic ID'].get('id', 'unknown')
+                        basic = message['Basic ID']
 
-                    # Process location/vector messages
+                        # UA type parsing
+                        raw_ua = basic.get('ua_type', None)
+                        ua_code = None
+                        if raw_ua is not None:
+                            try:
+                                ua_code = int(raw_ua)
+                            except (TypeError, ValueError):
+                                ua_code = next(
+                                    (k for k, v in UA_TYPE_MAPPING.items()
+                                     if v.lower() == str(raw_ua).lower()),
+                                    None
+                                )
+                        if ua_code not in UA_TYPE_MAPPING:
+                            ua_code = None
+                        ua_name = UA_TYPE_MAPPING.get(ua_code, 'Unknown')
+                        drone_info['ua_type']      = ua_code
+                        drone_info['ua_type_name'] = ua_name
+
+                        # ID, MAC, RSSI
+                        drone_info['id_type'] = basic.get('id_type')
+                        drone_info['mac']     = basic.get('MAC')
+                        drone_info['rssi']    = basic.get('RSSI')
+                        if basic.get('id_type') == 'Serial Number (ANSI/CTA-2063-A)':
+                            drone_info['id']  = basic.get('id', 'unknown')
+                        elif basic.get('id_type') == 'CAA Assigned Registration ID':
+                            drone_info['caa'] = basic.get('id', 'unknown')
+
+                    if 'Operator ID Message' in message:
+                        op = message['Operator ID Message']
+                        drone_info['operator_id_type'] = op.get('operator_id_type', "")
+                        drone_info['operator_id']      = op.get('operator_id', "")
+
                     if 'Location/Vector Message' in message:
-                        drone_info['lat'] = get_float(message['Location/Vector Message'].get('latitude', 0.0))
-                        drone_info['lon'] = get_float(message['Location/Vector Message'].get('longitude', 0.0))
-                        drone_info['speed'] = get_float(message['Location/Vector Message'].get('speed', 0.0))
-                        drone_info['vspeed'] = get_float(message['Location/Vector Message'].get('vert_speed', 0.0))
-                        drone_info['alt'] = get_float(message['Location/Vector Message'].get('geodetic_altitude', 0.0))
-                        drone_info['height'] = get_float(message['Location/Vector Message'].get('height_agl', 0.0))
+                        loc = message['Location/Vector Message']
+                        # basic telemetry
+                        drone_info['lat']    = get_float(loc.get('latitude', 0.0))
+                        drone_info['lon']    = get_float(loc.get('longitude', 0.0))
+                        drone_info['speed']  = get_float(loc.get('speed', 0.0))
+                        drone_info['vspeed'] = get_float(loc.get('vert_speed', 0.0))
+                        drone_info['alt']    = get_float(loc.get('geodetic_altitude', 0.0))
+                        drone_info['height'] = get_float(loc.get('height_agl', 0.0))
 
-                    # Process Self-ID messages
+                        # extra Remote ID fields
+                        drone_info['op_status']          = loc.get('op_status', "")
+                        drone_info['height_type']        = loc.get('height_type', "")
+                        drone_info['ew_dir']             = loc.get('ew_dir_segment', "")
+                        drone_info['direction']          = get_int(loc.get('direction', None), None)
+                        drone_info['speed_multiplier']   = get_float(
+                            loc.get('speed_multiplier', "0").split()[0]
+                        )
+                        drone_info['pressure_altitude']  = get_float(
+                            loc.get('pressure_altitude', "0").split()[0]
+                        )
+                        drone_info['vertical_accuracy']   = loc.get('vertical_accuracy', "")
+                        drone_info['horizontal_accuracy'] = loc.get('horizontal_accuracy', "")
+                        drone_info['baro_accuracy']       = loc.get('baro_accuracy', "")
+                        drone_info['speed_accuracy']      = loc.get('speed_accuracy', "")
+                        drone_info['timestamp']           = loc.get('timestamp', "")
+                        drone_info['timestamp_accuracy']  = loc.get('timestamp_accuracy', "")
+
                     if 'Self-ID Message' in message:
                         drone_info['description'] = message['Self-ID Message'].get('text', "")
 
-                    # Process System messages
                     if 'System Message' in message:
-                        drone_info['pilot_lat'] = get_float(message['System Message'].get('operator_lat', 0.0))
-                        drone_info['pilot_lon'] = get_float(message['System Message'].get('operator_lon', 0.0))
+                        sysm = message['System Message']
+                        drone_info['pilot_lat'] = get_float(sysm.get('operator_lat', 0.0))
+                        drone_info['pilot_lon'] = get_float(sysm.get('operator_lon', 0.0))
 
                 else:
                     logger.error("Unexpected message format; expected dict or list.")
@@ -330,13 +437,13 @@ def zmq_to_cot(
 
                 # --- Updated logic for handling serial vs. CAA-only broadcasts ---
                 if 'id' in drone_info:
-                    # We have a serial broadcast.
                     if not drone_info['id'].startswith('drone-'):
                         drone_info['id'] = f"drone-{drone_info['id']}"
                         logger.debug(f"Ensured drone id with prefix: {drone_info['id']}")
                     else:
                         logger.debug(f"Drone id already has prefix: {drone_info['id']}")
                     drone_id = drone_info['id']
+
                     if drone_id in drone_manager.drone_dict:
                         drone = drone_manager.drone_dict[drone_id]
                         drone.update(
@@ -354,6 +461,22 @@ def zmq_to_cot(
                             home_lat=drone_info.get('home_lat', 0.0),
                             home_lon=drone_info.get('home_lon', 0.0),
                             id_type=drone_info.get('id_type', ""),
+                            ua_type=drone_info.get('ua_type'),
+                            ua_type_name=drone_info.get('ua_type_name', ""),
+                            operator_id_type=drone_info.get('operator_id_type', ""),
+                            operator_id=drone_info.get('operator_id', ""),
+                            op_status=drone_info.get('op_status', ""),
+                            height_type=drone_info.get('height_type', ""),
+                            ew_dir=drone_info.get('ew_dir', ""),
+                            direction=drone_info.get('direction'),
+                            speed_multiplier=drone_info.get('speed_multiplier'),
+                            pressure_altitude=drone_info.get('pressure_altitude'),
+                            vertical_accuracy=drone_info.get('vertical_accuracy', ""),
+                            horizontal_accuracy=drone_info.get('horizontal_accuracy', ""),
+                            baro_accuracy=drone_info.get('baro_accuracy', ""),
+                            speed_accuracy=drone_info.get('speed_accuracy', ""),
+                            timestamp=drone_info.get('timestamp', ""),
+                            timestamp_accuracy=drone_info.get('timestamp_accuracy', ""),
                             index=drone_info.get('index', 0),
                             runtime=drone_info.get('runtime', 0),
                             caa_id=drone_info.get('caa', "")
@@ -376,6 +499,22 @@ def zmq_to_cot(
                             home_lat=drone_info.get('home_lat', 0.0),
                             home_lon=drone_info.get('home_lon', 0.0),
                             id_type=drone_info.get('id_type', ""),
+                            ua_type=drone_info.get('ua_type'),
+                            ua_type_name=drone_info.get('ua_type_name', ""),
+                            operator_id_type=drone_info.get('operator_id_type', ""),
+                            operator_id=drone_info.get('operator_id', ""),
+                            op_status=drone_info.get('op_status', ""),
+                            height_type=drone_info.get('height_type', ""),
+                            ew_dir=drone_info.get('ew_dir', ""),
+                            direction=drone_info.get('direction'),
+                            speed_multiplier=drone_info.get('speed_multiplier'),
+                            pressure_altitude=drone_info.get('pressure_altitude'),
+                            vertical_accuracy=drone_info.get('vertical_accuracy', ""),
+                            horizontal_accuracy=drone_info.get('horizontal_accuracy', ""),
+                            baro_accuracy=drone_info.get('baro_accuracy', ""),
+                            speed_accuracy=drone_info.get('speed_accuracy', ""),
+                            timestamp=drone_info.get('timestamp', ""),
+                            timestamp_accuracy=drone_info.get('timestamp_accuracy', ""),
                             index=drone_info.get('index', 0),
                             runtime=drone_info.get('runtime', 0),
                             caa_id=drone_info.get('caa', "")
@@ -386,9 +525,9 @@ def zmq_to_cot(
                     # No primary serial broadcast present (CAA-only)
                     if 'mac' in drone_info and drone_info['mac']:
                         updated = False
-                        for drone in drone_manager.drone_dict.values():
-                            if drone.mac == drone_info['mac']:
-                                drone.update(
+                        for d in drone_manager.drone_dict.values():
+                            if d.mac == drone_info['mac']:
+                                d.update(
                                     lat=drone_info.get('lat', 0.0),
                                     lon=drone_info.get('lon', 0.0),
                                     speed=drone_info.get('speed', 0.0),
@@ -403,6 +542,22 @@ def zmq_to_cot(
                                     home_lat=drone_info.get('home_lat', 0.0),
                                     home_lon=drone_info.get('home_lon', 0.0),
                                     id_type=drone_info.get('id_type', ""),
+                                    ua_type=drone_info.get('ua_type'),
+                                    ua_type_name=drone_info.get('ua_type_name', ""),
+                                    operator_id_type=drone_info.get('operator_id_type', ""),
+                                    operator_id=drone_info.get('operator_id', ""),
+                                    op_status=drone_info.get('op_status', ""),
+                                    height_type=drone_info.get('height_type', ""),
+                                    ew_dir=drone_info.get('ew_dir', ""),
+                                    direction=drone_info.get('direction'),
+                                    speed_multiplier=drone_info.get('speed_multiplier'),
+                                    pressure_altitude=drone_info.get('pressure_altitude'),
+                                    vertical_accuracy=drone_info.get('vertical_accuracy', ""),
+                                    horizontal_accuracy=drone_info.get('horizontal_accuracy', ""),
+                                    baro_accuracy=drone_info.get('baro_accuracy', ""),
+                                    speed_accuracy=drone_info.get('speed_accuracy', ""),
+                                    timestamp=drone_info.get('timestamp', ""),
+                                    timestamp_accuracy=drone_info.get('timestamp_accuracy', ""),
                                     index=drone_info.get('index', 0),
                                     runtime=drone_info.get('runtime', 0),
                                     caa_id=drone_info.get('caa', "")
