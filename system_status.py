@@ -75,7 +75,7 @@ class SystemStatus:
             'event',
             version='2.0',
             uid=self.id,
-            type='b-s-s-s',
+            type='a-f-G-E-S',
             time=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             start=current_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             stale=stale_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
@@ -115,13 +115,6 @@ class SystemStatus:
         etree.SubElement(detail, 'remarks').text = remarks_text
 
         etree.SubElement(detail, 'color', argb='-256')
-
-        # Include usericon
-        etree.SubElement(
-            detail,
-            'usericon',
-            iconsetpath='34ae1613-9645-4222-a9d2-e5f243dea2865/Military/Ground_Vehicle.png'  # Use appropriate icon
-        )
 
         cot_xml_bytes = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
 
