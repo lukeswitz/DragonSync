@@ -7,7 +7,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
+copies of the Software, and to permit persons to whom the Software are
 furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all
@@ -17,11 +17,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+LIABILITY, WHETHER IN AN ACTION OF TORT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-
 
 import datetime
 import xml.sax.saxutils
@@ -33,7 +32,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SystemStatus:
-    """Represents system status data."""
+    """Represents system status data, now including external GPS speed & track."""
 
     def __init__(
         self,
@@ -49,7 +48,9 @@ class SystemStatus:
         temperature: float = 0.0,
         uptime: float = 0.0,
         pluto_temp: str = 'N/A',
-        zynq_temp: str = 'N/A' 
+        zynq_temp: str = 'N/A',
+        speed: float = 0.0,
+        track: float = 0.0
     ):
         self.id = f"wardragon-{serial_number}"
         self.lat = lat
@@ -65,9 +66,12 @@ class SystemStatus:
         self.last_update_time = time.time()
         self.pluto_temp = pluto_temp
         self.zynq_temp = zynq_temp
+        # external GPS-provided fields
+        self.speed = speed
+        self.track = track
         
     def to_cot_xml(self) -> bytes:
-        """Converts the system status data to a CoT XML message."""
+        """Converts the system status data to a CoT XML message, embedding provided speed & track."""
         current_time = datetime.datetime.utcnow()
         stale_time = current_time + datetime.timedelta(minutes=10)
 
@@ -82,7 +86,7 @@ class SystemStatus:
             how='m-g'
         )
 
-        point = etree.SubElement(
+        etree.SubElement(
             event,
             'point',
             lat=str(self.lat),
@@ -93,12 +97,9 @@ class SystemStatus:
         )
 
         detail = etree.SubElement(event, 'detail')
-
         etree.SubElement(detail, 'contact', endpoint='', phone='', callsign=self.id)
-
         etree.SubElement(detail, 'precisionlocation', geopointsrc='gps', altsrc='gps')
 
-        # Format remarks with system statistics
         remarks_text = (
             f"CPU Usage: {self.cpu_usage}%, "
             f"Memory Total: {self.memory_total:.2f} MB, Memory Available: {self.memory_available:.2f} MB, "
@@ -108,18 +109,25 @@ class SystemStatus:
             f"Pluto Temp: {self.pluto_temp}°C, "
             f"Zynq Temp: {self.zynq_temp}°C"
         )
-
-        # Escape special characters in remarks
-        remarks_text = xml.sax.saxutils.escape(remarks_text)
-
-        etree.SubElement(detail, 'remarks').text = remarks_text
-
+        etree.SubElement(detail, 'remarks').text = xml.sax.saxutils.escape(remarks_text)
         etree.SubElement(detail, 'color', argb='-256')
 
-        cot_xml_bytes = etree.tostring(event, pretty_print=True, xml_declaration=True, encoding='UTF-8')
+        # embed GPS-provided track & speed
+        etree.SubElement(
+            detail,
+            'track',
+            course=f"{self.track:.1f}",
+            speed=f"{self.speed:.2f}"
+        )
 
-        # --- Debug Logging ---
-        # Only prints if the logger is set to DEBUG (e.g. by --debug in your main script)
+        cot_xml_bytes = etree.tostring(
+            event,
+            pretty_print=True,
+            xml_declaration=True,
+            encoding='UTF-8'
+        )
+
+        # Debug logging
         logger.debug("SystemStatus CoT XML for '%s':\n%s", self.id, cot_xml_bytes.decode('utf-8'))
 
         return cot_xml_bytes
