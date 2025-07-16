@@ -276,52 +276,76 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-def main(host, port, interval, debug):
-    """Main function to gather data and send it over ZMQ."""
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    socket = create_zmq_context(host, port) if not debug else None
-
-    while True:
-        try:
-            data = {
-                'timestamp': time.time(),
-                'gps_data': get_gps_data(debug=debug),
-                'serial_number': get_serial_number(debug=debug),
-                'system_stats': get_system_stats(),
-                # --------------------------------------------
-                # Add the new temperature data to the payload
-                'ant_sdr_temps': get_pluto_temperatures(debug=debug)
-                # --------------------------------------------
-            }
-            json_data = json.dumps(data, indent=4)
-
-            if debug:
-                print(f"Debug Output:\n{json_data}")
-            else:
-                # Publish over ZMQ
-                socket.send_string(json_data)
-
-            time.sleep(interval)
-
-        except zmq.ZMQError as e:
-            if debug:
-                print(f"ZMQ Error: {e}")
-            time.sleep(5)  # Backoff before retrying
-
-        except Exception as e:
-            if debug:
-                print(f"Unexpected error: {e}")
-            time.sleep(5)  # Backoff before retrying
-
-
+def main(host, port, interval, debug, stationary=False, latitude=None, longitude=None):
+  """Main function to gather data and send it over ZMQ."""
+  signal.signal(signal.SIGINT, signal_handler)
+  signal.signal(signal.SIGTERM, signal_handler)
+  
+  socket = create_zmq_context(host, port)
+  
+  while True:
+    try:
+      # If stationary, use fixed coordinates
+      if stationary and (latitude is not None and longitude is not None):
+        gps_data = {
+          'latitude': latitude,
+          'longitude': longitude,
+          'altitude': 'N/A',
+          'speed': 'N/A',
+          'track': 'N/A'
+        }
+      else:
+        gps_data = get_gps_data(debug=debug)
+        if not gps_data or not isinstance(gps_data, dict):
+          gps_data = {
+            'latitude': 'N/A',
+            'longitude': 'N/A',
+            'altitude': 'N/A',
+            'speed': 'N/A',
+            'track': 'N/A'
+          }
+          
+      data = {
+        'timestamp': time.time(),
+        'gps_data': gps_data,
+        'serial_number': get_serial_number(debug=debug),
+        'system_stats': get_system_stats(),
+        'ant_sdr_temps': get_pluto_temperatures(debug=debug)
+      }
+      json_data = json.dumps(data, indent=4)
+      
+      if debug:
+        print(f"Debug Output:\n{json_data}")
+        
+      socket.send_string(json_data)
+      
+      time.sleep(interval)
+      
+    except zmq.ZMQError as e:
+      if debug:
+        print(f"ZMQ Error: {e}")
+      time.sleep(5)  # Backoff before retrying
+      
+    except Exception as e:
+      if debug:
+        print(f"Unexpected error: {e}")
+      time.sleep(5)  # Backoff before retrying
+      
+      
+      
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="WarDragon System Monitor")
-    parser.add_argument('--zmq_host', type=str, default='0.0.0.0', help='ZMQ Host')
-    parser.add_argument('--zmq_port', type=int, default=4225, help='ZMQ Port')
-    parser.add_argument('--interval', type=int, default=30, help='Update interval in seconds')
-    parser.add_argument('-d', '--debug', action='store_true', help='Print JSON to terminal for debugging')
-
-    args = parser.parse_args()
-    main(args.zmq_host, args.zmq_port, args.interval, args.debug)
+  parser = argparse.ArgumentParser(description="WarDragon System Monitor")
+  parser.add_argument('--zmq_host', type=str, default='0.0.0.0', help='ZMQ Host')
+  parser.add_argument('--zmq_port', type=int, default=4225, help='ZMQ Port')
+  parser.add_argument('-i', '--interval', type=int, default=30, help='Update interval in seconds')
+  parser.add_argument('-d', '--debug', action='store_true', help='Print JSON to terminal for debugging')
+  parser.add_argument('-s', '--stationary', action='store_true', help='Send a fixed GPS location')
+  parser.add_argument('--lat', type=float, default=0.0, help='Latitude for stationary mode')
+  parser.add_argument('--lon', type=float, default=0.0, help='Longitude for stationary mode')
+  
+  args = parser.parse_args()
+  main(args.zmq_host, args.zmq_port, args.interval, args.debug, 
+      args.stationary, args.lat, args.lon
+  )
+  
+  
