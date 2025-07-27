@@ -158,11 +158,23 @@ def validate_config(config: Dict[str, Any]):
     if enable_multicast:
         multicast_address = get_str(config.get('tak_multicast_addr'))
         multicast_port = get_int(config.get('tak_multicast_port'))
+        multicast_ttl = get_int(config.get('multicast_ttl', 1))
         if not multicast_address or not multicast_port:
             raise ValueError("Multicast is enabled but 'tak_multicast_addr' or 'tak_multicast_port' is missing.")
+        if multicast_ttl < 1:
+            raise ValueError("Multicast TTL must be at least 1.")
         config['enable_multicast'] = True
     else:
         config['enable_multicast'] = False
+
+    # Validate receive configurations if enabled
+    enable_receive = get_bool(config.get('enable_receive', False))
+    if enable_receive:
+        if not enable_multicast:
+            raise ValueError("Receive is enabled but multicast is not. Receive requires multicast to be enabled.")
+        config['enable_receive'] = True
+    else:
+        config['enable_receive'] = False
 
     # Ensure consistency between tak_host and tak_port
     if (tak_host and not tak_port) or (tak_port and not tak_host):

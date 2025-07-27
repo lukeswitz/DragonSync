@@ -170,7 +170,9 @@ def zmq_to_cot(
     rate_limit: float = 1.0,
     max_drones: int = 30,
     inactivity_timeout: float = 60.0,
-    multicast_interface: Optional[str] = None
+    multicast_interface: Optional[str] = None,
+    multicast_ttl: int = 1,
+    enable_receive: bool = False
 ):
     """Main function to convert ZMQ messages to CoT and send to TAK server."""
 
@@ -211,8 +213,13 @@ def zmq_to_cot(
         multicast_address=multicast_address,
         multicast_port=multicast_port,
         enable_multicast=enable_multicast,
-        multicast_interface=multicast_interface
+        multicast_interface=multicast_interface,
+        multicast_ttl=multicast_ttl,
+        enable_receive=enable_receive
     )
+
+    # Start receiver if enabled
+    cot_messenger.start_receiver()
 
     # Initialize DroneManager with CotMessenger
     drone_manager = DroneManager(
@@ -653,6 +660,8 @@ if __name__ == "__main__":
     parser.add_argument("--tak-multicast-port", type=int, help="TAK multicast port (optional)")
     parser.add_argument("--enable-multicast", action="store_true", help="Enable sending to multicast address")
     parser.add_argument("--tak-multicast-interface", type=str, help="Multicast interface (IP or name) to use for sending multicast")
+    parser.add_argument("--multicast-ttl", type=int, help="TTL for multicast packets (default: 1)")
+    parser.add_argument("--enable-receive", action="store_true", help="Enable receiving multicast CoT messages")
     parser.add_argument("--rate-limit", type=float, help="Rate limit for sending CoT messages (seconds)")
     parser.add_argument("--max-drones", type=int, help="Maximum number of drones to track simultaneously")
     parser.add_argument("--inactivity-timeout", type=float, help="Time in seconds before a drone is considered inactive")
@@ -702,7 +711,9 @@ if __name__ == "__main__":
         "rate_limit": args.rate_limit if args.rate_limit is not None else get_float(config_values.get("rate_limit", 1.0)),
         "max_drones": args.max_drones if args.max_drones is not None else get_int(config_values.get("max_drones", 30)),
         "inactivity_timeout": args.inactivity_timeout if args.inactivity_timeout is not None else get_float(config_values.get("inactivity_timeout", 60.0)),
-        "tak_multicast_interface": tak_multicast_interface
+        "tak_multicast_interface": tak_multicast_interface,
+        "multicast_ttl": args.multicast_ttl if args.multicast_ttl is not None else get_int(config_values.get("multicast_ttl", 1)),
+        "enable_receive": args.enable_receive or get_bool(config_values.get("enable_receive", False))
     }
 
     # Validate configuration
@@ -733,5 +744,7 @@ if __name__ == "__main__":
         rate_limit=config["rate_limit"],
         max_drones=config["max_drones"],
         inactivity_timeout=config["inactivity_timeout"],
-        multicast_interface=config["tak_multicast_interface"]
+        multicast_interface=config["tak_multicast_interface"],
+        multicast_ttl=config["multicast_ttl"],
+        enable_receive=config["enable_receive"]
     )

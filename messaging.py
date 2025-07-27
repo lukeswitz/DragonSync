@@ -10,8 +10,8 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -26,7 +26,8 @@ import socket
 import struct
 import logging
 import time
-from typing import Optional
+import threading
+from typing import Optional, List, Tuple
 from tak_client import TAKClient
 from tak_udp_client import TAKUDPClient
 
@@ -85,6 +86,8 @@ class CotMessenger:
         multicast_port: Optional[int] = None,
         enable_multicast: bool = False,
         multicast_interface: Optional[str] = None,
+        multicast_ttl: int = 1,
+        enable_receive: bool = False
     ):
         """
         Initializes the CotMessenger.
@@ -94,7 +97,9 @@ class CotMessenger:
         :param multicast_address: Multicast address to send CoT messages.
         :param multicast_port: Multicast port to send CoT messages.
         :param enable_multicast: Flag to enable multicast sending.
-        :param multicast_interface: The network interface (IP or name) to use for sending multicast traffic.
+        :param multicast_interface: The network interface (IP or name) to use for sending multicast traffic. If "0.0.0.0", send on all available interfaces.
+        :param multicast_ttl: TTL for multicast packets.
+        :param enable_receive: Flag to enable receiving multicast CoT messages.
         """
         self.tak_client = tak_client
         self.tak_udp_client = tak_udp_client
@@ -102,52 +107,60 @@ class CotMessenger:
         self.multicast_port = multicast_port
         self.enable_multicast = enable_multicast
         self.multicast_interface = multicast_interface
-        self.multicast_socket = None
+        self.multicast_ttl = multicast_ttl
+        self.multicast_sockets: List[Tuple[socket.socket, str]] = []  # List of (socket, interface_ip) tuples
+        self.enable_receive = enable_receive
+        self.receive_socket: Optional[socket.socket] = None
+        self.receive_thread: Optional[threading.Thread] = None
+        self.running = False
 
         if self.enable_multicast and self.multicast_address and self.multicast_port:
             try:
-                self.multicast_socket = socket.socket(
-                    socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
-                )
-                ttl = struct.pack("b", 1)
-                self.multicast_socket.setsockopt(
-                    socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl
-                )
+                ttl_packed = struct.pack("b", self.multicast_ttl)
 
-                if self.multicast_interface:
-                    interface_ip = resolve_interface_to_ip(self.multicast_interface)
-                    if interface_ip:
-                        try:
-                            packed_if = socket.inet_pton(socket.AF_INET, interface_ip)
-                            self.multicast_socket.setsockopt(
-                                socket.IPPROTO_IP, socket.IP_MULTICAST_IF, packed_if
-                            )
-                            logger.debug(f"Set multicast interface to {interface_ip}")
-
-                            # --- new: if using loopback, enable multicast loopback ---
-                            if interface_ip == "127.0.0.1":
-                                self.multicast_socket.setsockopt(
-                                    socket.IPPROTO_IP,
-                                    socket.IP_MULTICAST_LOOP,
-                                    1
-                                )
-                                logger.debug("Enabled IP_MULTICAST_LOOP on loopback")
-
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to set multicast interface '{self.multicast_interface}': {e}"
-                            )
+                if self.multicast_interface == "0.0.0.0":
+                    if netifaces:
+                        for iface in netifaces.interfaces():
+                            addrs = netifaces.ifaddresses(iface)
+                            if netifaces.AF_INET in addrs:
+                                for addr_info in addrs[netifaces.AF_INET]:
+                                    ip_addr = addr_info.get("addr")
+                                    if ip_addr and not ip_addr.startswith("169.254"):  # Skip link-local
+                                        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+                                        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_packed)
+                                        packed_if = socket.inet_aton(ip_addr)
+                                        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, packed_if)
+                                        if ip_addr == "127.0.0.1":
+                                            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+                                            logger.debug("Enabled IP_MULTICAST_LOOP on loopback")
+                                        self.multicast_sockets.append((sock, ip_addr))
+                                        logger.debug(f"Initialized multicast socket for interface {iface} with IP {ip_addr}")
+                        if not self.multicast_sockets:
+                            logger.error("No valid IPv4 interfaces found for multicast sending.")
                     else:
-                        logger.error(
-                            f"Could not resolve '{self.multicast_interface}' to a valid IP."
-                        )
+                        logger.error("netifaces module is required to enumerate interfaces when multicast_interface is 0.0.0.0.")
+                else:
+                    interface_ip = resolve_interface_to_ip(self.multicast_interface) if self.multicast_interface else None
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl_packed)
+                    if interface_ip:
+                        packed_if = socket.inet_aton(interface_ip)
+                        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, packed_if)
+                        if interface_ip == "127.0.0.1":
+                            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+                            logger.debug("Enabled IP_MULTICAST_LOOP on loopback")
+                        logger.debug(f"Set multicast interface to {interface_ip}")
+                    self.multicast_sockets.append((sock, interface_ip or "default"))
+                    logger.debug(
+                        f"Initialized multicast socket for {self.multicast_address}:{self.multicast_port} using interface '{self.multicast_interface}'"
+                    )
 
                 logger.debug(
-                    f"Initialized persistent multicast socket for " +
-                    f"{self.multicast_address}:{self.multicast_port}"
+                    f"Initialized {len(self.multicast_sockets)} multicast socket(s) for "
+                    f"{self.multicast_address}:{self.multicast_port} with TTL {self.multicast_ttl}"
                 )
             except Exception as e:
-                logger.error(f"Failed to initialize multicast socket: {e}")
+                logger.error(f"Failed to initialize multicast socket(s): {e}")
         else:
             if self.enable_multicast:
                 logger.error(
@@ -157,6 +170,56 @@ class CotMessenger:
                 logger.debug(
                     "Multicast is not enabled. Skipping multicast socket initialization."
                 )
+
+        # Initialize receiver if enabled
+        if self.enable_receive and self.multicast_address and self.multicast_port:
+            self._setup_receiver()
+
+    def _setup_receiver(self):
+        """Sets up the multicast receiver socket."""
+        try:
+            self.receive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.receive_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                self.receive_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except AttributeError:
+                pass  # Some systems don't support SO_REUSEPORT
+
+            # Bind to the multicast port on all interfaces
+            self.receive_socket.bind(('', self.multicast_port))
+
+            # Join the multicast group
+            group = socket.inet_aton(self.multicast_address)
+            mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+            self.receive_socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+
+            # Disable loopback to avoid receiving own messages
+            self.receive_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 0)
+
+            logger.debug(f"Initialized multicast receiver on {self.multicast_address}:{self.multicast_port}")
+        except Exception as e:
+            logger.error(f"Failed to initialize multicast receiver: {e}")
+            self.receive_socket = None
+
+    def start_receiver(self):
+        """Starts the receiver thread if enabled and socket is set up."""
+        if self.enable_receive and self.receive_socket:
+            self.running = True
+            self.receive_thread = threading.Thread(target=self._receive_loop, daemon=True)
+            self.receive_thread.start()
+            logger.debug("Started multicast receiver thread")
+
+    def _receive_loop(self):
+        """Loop to receive and process incoming CoT messages."""
+        while self.running:
+            try:
+                data, addr = self.receive_socket.recvfrom(4096)  # Buffer size for CoT XML
+                if data:
+                    # For now, just log the received CoT (future: parse/process)
+                    logger.info(f"Received CoT message from {addr}: {data.decode('utf-8', errors='ignore')}")
+                    # Future expansion: Parse with lxml, update state, etc.
+            except Exception as e:
+                logger.error(f"Error receiving CoT message: {e}")
 
     def send_cot(
         self, cot_xml: bytes, retry_count: int = 3, retry_delay: float = 1.0
@@ -170,7 +233,7 @@ class CotMessenger:
         """
         logger.debug("send_cot method called.")
         logger.debug(
-            f"Multicast Enabled: {self.enable_multicast}, Multicast Socket: {'Initialized' if self.multicast_socket else 'Not Initialized'}"
+            f"Multicast Enabled: {self.enable_multicast}, Multicast Sockets: {len(self.multicast_sockets)} initialized"
         )
 
         # Sending to TAK server via TCP/TLS
@@ -215,43 +278,58 @@ class CotMessenger:
                 "No TAK client configured. Skipping sending CoT message to TAK server."
             )
 
-        # Sending to multicast address
-        if self.enable_multicast and self.multicast_socket:
+        # Sending to multicast address(es)
+        if self.enable_multicast and self.multicast_sockets:
             logger.debug(
-                f"Attempting to send CoT message via multicast to {self.multicast_address}:{self.multicast_port}"
+                f"Attempting to send CoT message via multicast to {self.multicast_address}:{self.multicast_port} on {len(self.multicast_sockets)} interface(s)"
             )
-            for attempt in range(1, retry_count + 1):
-                try:
-                    self.multicast_socket.sendto(
-                        cot_xml, (self.multicast_address, self.multicast_port)
-                    )
-                    logger.info(
-                        f"Sent CoT message to multicast address {self.multicast_address}:{self.multicast_port} using interface '{self.multicast_interface}'."
-                    )
-                    break
-                except Exception as e:
-                    logger.error(
-                        f"Attempt {attempt}: Failed to send CoT message via multicast: {e}"
-                    )
-                    if attempt < retry_count:
-                        time.sleep(retry_delay)
-                    else:
-                        logger.critical(
-                            "Exceeded maximum retries for sending CoT message via multicast."
+            for sock, iface_ip in self.multicast_sockets:
+                for attempt in range(1, retry_count + 1):
+                    try:
+                        sock.sendto(
+                            cot_xml, (self.multicast_address, self.multicast_port)
                         )
+                        logger.info(
+                            f"Sent CoT message to multicast address {self.multicast_address}:{self.multicast_port} using interface IP '{iface_ip}'."
+                        )
+                        break
+                    except Exception as e:
+                        logger.error(
+                            f"Attempt {attempt}: Failed to send CoT message via multicast on interface {iface_ip}: {e}"
+                        )
+                        if attempt < retry_count:
+                            time.sleep(retry_delay)
+                        else:
+                            logger.critical(
+                                f"Exceeded maximum retries for sending CoT message via multicast on interface {iface_ip}."
+                            )
         else:
             logger.debug(
-                "Multicast is not enabled or multicast socket not initialized. Skipping sending CoT message to multicast."
+                "Multicast is not enabled or no multicast sockets initialized. Skipping sending CoT message to multicast."
             )
 
     def close(self):
         """Closes persistent multicast sockets and TAK clients if initialized."""
-        if self.multicast_socket:
+        if self.enable_receive:
+            self.running = False
+            if self.receive_thread and self.receive_thread.is_alive():
+                self.receive_thread.join(timeout=5)
+                logger.debug("Stopped receive thread")
+            if self.receive_socket:
+                try:
+                    self.receive_socket.close()
+                    logger.debug("Closed receive socket")
+                except Exception as e:
+                    logger.error(f"Error closing receive socket: {e}")
+
+        for sock, iface_ip in self.multicast_sockets:
             try:
-                self.multicast_socket.close()
-                logger.debug("Closed multicast socket.")
+                sock.close()
+                logger.debug(f"Closed multicast socket for interface {iface_ip}.")
             except Exception as e:
-                logger.error(f"Error closing multicast socket: {e}")
+                logger.error(f"Error closing multicast socket for {iface_ip}: {e}")
+
+        self.multicast_sockets = []
 
         # Close TAK clients if they exist
         if self.tak_client:
