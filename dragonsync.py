@@ -248,6 +248,8 @@ def zmq_to_cot(
             tak_udp_client.close()
         if cot_messenger:
             cot_messenger.close()
+        if drone_manager:
+            drone_manager.close()
         logger.info("Cleaned up ZMQ resources")
         sys.exit(0)
 
