@@ -160,9 +160,9 @@ class DroneManager:
             logger.debug(f"Removed drone: {drone_id}")
 
     def close(self):
-    if self.mqtt_enabled and self.mqtt_client:
-        try:
-            self.mqtt_client.loop_stop()
-            self.mqtt_client.disconnect()
-        except Exception as e:
-            logger.warning(f"Error shutting down MQTT client: {e}")
+        if self.mqtt_enabled and self.mqtt_client:
+            try:
+                self.mqtt_client.loop_stop()
+                self.mqtt_client.disconnect()
+            except Exception as e:
+                logger.warning(f"Error shutting down MQTT client: {e}")
