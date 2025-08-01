@@ -127,7 +127,7 @@ class DroneManager:
                 if self.mqtt_enabled and self.mqtt_client:
                     try:
                         # Use a method to convert drone to dict for serialization
-                        self.mqtt_client.publish(self.mqtt_topic, drone.to_json())
+                        self.mqtt_client.publish(self.mqtt_topic, json.dumps(vars(drone)))
                     except Exception as e:
                         logger.warning(f"Failed to publish to MQTT: {e}")
                 drone.last_sent_lat = drone.lat
