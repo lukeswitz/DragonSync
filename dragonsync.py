@@ -231,7 +231,11 @@ def zmq_to_cot(
         max_drones=max_drones,
         rate_limit=rate_limit,
         inactivity_timeout=inactivity_timeout,
-        cot_messenger=cot_messenger
+        cot_messenger=cot_messenger,
+        mqtt_enabled=config["mqtt_enabled"],
+        mqtt_host=config["mqtt_host"],
+        mqtt_port=config["mqtt_port"],
+        mqtt_topic=config["mqtt_topic"]
     )
 
     def signal_handler(sig, frame):
@@ -731,7 +735,7 @@ if __name__ == "__main__":
         "mqtt_topic": args.mqtt_topic if hasattr(args, "mqtt_topic") and args.mqtt_topic is not None else get_str(config_values.get("mqtt_topic", "wardragon/drones"))
     }
 
-    if config["mqtt_enabled"] and "mqtt" not in globals():
+    if config["mqtt_enabled"] and mqtt is None():
         logger.critical("MQTT support requested, but paho-mqtt is not installed!")
         sys.exit(1)
     
