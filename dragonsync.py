@@ -735,7 +735,7 @@ if __name__ == "__main__":
         "mqtt_topic": args.mqtt_topic if hasattr(args, "mqtt_topic") and args.mqtt_topic is not None else get_str(config_values.get("mqtt_topic", "wardragon/drones"))
     }
 
-    if config["mqtt_enabled"] and mqtt is None():
+    if config["mqtt_enabled"] and mqtt is None:
         logger.critical("MQTT support requested, but paho-mqtt is not installed!")
         sys.exit(1)
     
