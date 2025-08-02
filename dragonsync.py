@@ -40,6 +40,11 @@ import atexit
 import os
 
 import zmq
+import json
+try:
+    import paho.mqtt.client as mqtt
+except ImportError:
+    mqtt = None
 from lxml import etree
 import xml.sax.saxutils
 
@@ -226,7 +231,11 @@ def zmq_to_cot(
         max_drones=max_drones,
         rate_limit=rate_limit,
         inactivity_timeout=inactivity_timeout,
-        cot_messenger=cot_messenger
+        cot_messenger=cot_messenger,
+        mqtt_enabled=config["mqtt_enabled"],
+        mqtt_host=config["mqtt_host"],
+        mqtt_port=config["mqtt_port"],
+        mqtt_topic=config["mqtt_topic"]
     )
 
     def signal_handler(sig, frame):
@@ -243,6 +252,8 @@ def zmq_to_cot(
             tak_udp_client.close()
         if cot_messenger:
             cot_messenger.close()
+        if drone_manager:
+            drone_manager.close()
         logger.info("Cleaned up ZMQ resources")
         sys.exit(0)
 
@@ -666,6 +677,10 @@ if __name__ == "__main__":
     parser.add_argument("--max-drones", type=int, help="Maximum number of drones to track simultaneously")
     parser.add_argument("--inactivity-timeout", type=float, help="Time in seconds before a drone is considered inactive")
     parser.add_argument("-d", "--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--mqtt-enabled", action="store_true", help="Enable MQTT publishing of drone JSON")
+    parser.add_argument("--mqtt-host", type=str, help="MQTT broker host")
+    parser.add_argument("--mqtt-port", type=int, help="MQTT broker port")
+    parser.add_argument("--mqtt-topic", type=str, help="MQTT topic for drone messages")
     args = parser.parse_args()
 
     # Load config file if provided
@@ -713,9 +728,17 @@ if __name__ == "__main__":
         "inactivity_timeout": args.inactivity_timeout if args.inactivity_timeout is not None else get_float(config_values.get("inactivity_timeout", 60.0)),
         "tak_multicast_interface": tak_multicast_interface,
         "multicast_ttl": args.multicast_ttl if args.multicast_ttl is not None else get_int(config_values.get("multicast_ttl", 1)),
-        "enable_receive": args.enable_receive or get_bool(config_values.get("enable_receive", False))
+        "enable_receive": args.enable_receive or get_bool(config_values.get("enable_receive", False)),
+        "mqtt_enabled": args.mqtt_enabled if hasattr(args, "mqtt_enabled") and args.mqtt_enabled is not None else get_bool(config_values.get("mqtt_enabled", False)),
+        "mqtt_host": args.mqtt_host if hasattr(args, "mqtt_host") and args.mqtt_host is not None else get_str(config_values.get("mqtt_host", "127.0.0.1")),
+        "mqtt_port": args.mqtt_port if hasattr(args, "mqtt_port") and args.mqtt_port is not None else get_int(config_values.get("mqtt_port", 1883)),
+        "mqtt_topic": args.mqtt_topic if hasattr(args, "mqtt_topic") and args.mqtt_topic is not None else get_str(config_values.get("mqtt_topic", "wardragon/drones"))
     }
 
+    if config["mqtt_enabled"] and mqtt is None:
+        logger.critical("MQTT support requested, but paho-mqtt is not installed!")
+        sys.exit(1)
+    
     # Validate configuration
     try:
         validate_config(config)

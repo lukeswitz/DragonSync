@@ -27,6 +27,11 @@ from collections import deque
 from typing import Optional
 import logging
 import math
+import json
+try:
+    import paho.mqtt.client as mqtt
+except ImportError:
+    mqtt = None
 
 from drone import Drone
 from messaging import CotMessenger
@@ -37,7 +42,8 @@ class DroneManager:
     """Manages a collection of drones and handles their updates."""
 
     def __init__(self, max_drones=30, rate_limit=1.0, inactivity_timeout=60.0,
-                 cot_messenger: Optional[CotMessenger] = None):
+             cot_messenger: Optional[CotMessenger] = None,
+             mqtt_enabled=False, mqtt_host='127.0.0.1', mqtt_port=1883, mqtt_topic='wardragon/drones'):
         """
         Initializes the DroneManager.
         
@@ -51,6 +57,21 @@ class DroneManager:
         self.rate_limit = rate_limit          # Update frequency (in seconds)
         self.inactivity_timeout = inactivity_timeout  # Time before a drone is considered stale (in seconds)
         self.cot_messenger = cot_messenger
+        self.mqtt_enabled = mqtt_enabled
+        self.mqtt_topic = mqtt_topic
+        self.mqtt_client = None
+
+        if self.mqtt_enabled:
+            if mqtt is None:
+                logger.critical("MQTT support requested, but paho-mqtt is not installed!")
+                raise ImportError("paho-mqtt required for MQTT support")
+            self.mqtt_client = mqtt.Client()
+            try:
+                self.mqtt_client.connect(mqtt_host, mqtt_port, 60)
+                self.mqtt_client.loop_start()
+            except Exception as e:
+                logger.critical(f"Failed to connect to MQTT broker: {e}")
+                self.mqtt_enabled = False
 
     def update_or_add_drone(self, drone_id: str, drone_data: Drone):
         """Updates an existing drone or adds a new one to the collection."""
@@ -102,6 +123,13 @@ class DroneManager:
                 )
                 if self.cot_messenger:
                     self.cot_messenger.send_cot(cot_xml)
+                # MQTT: publish drone as JSON if enabled
+                if self.mqtt_enabled and self.mqtt_client:
+                    try:
+                        # Use a method to convert drone to dict for serialization
+                        self.mqtt_client.publish(self.mqtt_topic, json.dumps(vars(drone)))
+                    except Exception as e:
+                        logger.warning(f"Failed to publish to MQTT: {e}")
                 drone.last_sent_lat = drone.lat
                 drone.last_sent_lon = drone.lon
                 drone.last_sent_time = current_time
@@ -130,3 +158,11 @@ class DroneManager:
             self.drones.remove(drone_id)
             del self.drone_dict[drone_id]
             logger.debug(f"Removed drone: {drone_id}")
+
+    def close(self):
+        if self.mqtt_enabled and self.mqtt_client:
+            try:
+                self.mqtt_client.loop_stop()
+                self.mqtt_client.disconnect()
+            except Exception as e:
+                logger.warning(f"Error shutting down MQTT client: {e}")
