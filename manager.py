@@ -24,7 +24,7 @@ SOFTWARE.
 
 import time
 from collections import deque
-from typing import Optional
+from typing import Optional, List
 import logging
 import math
 import json
@@ -42,8 +42,9 @@ class DroneManager:
     """Manages a collection of drones and handles their updates."""
 
     def __init__(self, max_drones=30, rate_limit=1.0, inactivity_timeout=60.0,
-             cot_messenger: Optional[CotMessenger] = None,
-             mqtt_enabled=False, mqtt_host='127.0.0.1', mqtt_port=1883, mqtt_topic='wardragon/drones'):
+                 cot_messenger: Optional[CotMessenger] = None,
+                 mqtt_enabled=False, mqtt_host='127.0.0.1', mqtt_port=1883, mqtt_topic='wardragon/drones',
+                 extra_sinks: Optional[List] = None):
         """
         Initializes the DroneManager.
         
@@ -60,6 +61,7 @@ class DroneManager:
         self.mqtt_enabled = mqtt_enabled
         self.mqtt_topic = mqtt_topic
         self.mqtt_client = None
+        self.extra_sinks = extra_sinks or []
 
         if self.mqtt_enabled:
             if mqtt is None:
@@ -135,6 +137,35 @@ class DroneManager:
                 drone.last_sent_time = current_time
                 logger.debug(f"Sent CoT update for drone {drone_id} (position change: {position_change:.8f}).")
 
+                # Publish a snapshot to any additional sinks.
+                if self.extra_sinks:
+                    snapshot = {
+                        "id": drone_id,
+                        "lat": drone.lat,
+                        "lon": drone.lon,
+                        "alt": getattr(drone, "alt", 0.0),
+                        "speed": getattr(drone, "speed", 0.0),
+                        "vspeed": getattr(drone, "vspeed", 0.0),
+                        "direction": getattr(drone, "direction", 0.0),
+                        "mac": getattr(drone, "mac", ""),
+                        "rssi": getattr(drone, "rssi", None),
+                        "pilot_lat": getattr(drone, "pilot_lat", 0.0),
+                        "pilot_lon": getattr(drone, "pilot_lon", 0.0),
+                        "home_lat": getattr(drone, "home_lat", 0.0),
+                        "home_lon": getattr(drone, "home_lon", 0.0),
+                    }
+                    for s in self.extra_sinks:
+                        try:
+                            # main drone track
+                            s.publish_drone(snapshot)
+                            # optional pilot/home pins if the sink supports them
+                            if (snapshot["pilot_lat"] or snapshot["pilot_lon"]) and hasattr(s, "publish_pilot"):
+                                s.publish_pilot(drone_id, snapshot["pilot_lat"], snapshot["pilot_lon"], 0.0)
+                            if (snapshot["home_lat"] or snapshot["home_lon"]) and hasattr(s, "publish_home"):
+                                s.publish_home(drone_id, snapshot["home_lat"], snapshot["home_lon"], 0.0)
+                        except Exception as e:
+                            logger.warning(f"Extra sink publish failed for {drone_id}: {e}")
+
                 # Send pilot CoT update (static) if valid coordinates are available.
                 if drone.pilot_lat != 0.0 or drone.pilot_lon != 0.0:
                     pilot_xml = drone.to_pilot_cot_xml(
@@ -166,3 +197,4 @@ class DroneManager:
                 self.mqtt_client.disconnect()
             except Exception as e:
                 logger.warning(f"Error shutting down MQTT client: {e}")
+
