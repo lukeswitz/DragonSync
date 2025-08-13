@@ -177,7 +177,8 @@ def zmq_to_cot(
     inactivity_timeout: float = 60.0,
     multicast_interface: Optional[str] = None,
     multicast_ttl: int = 1,
-    enable_receive: bool = False
+    enable_receive: bool = False,
+    lattice_sink: Optional[object] = None,
 ):
     """Main function to convert ZMQ messages to CoT and send to TAK server."""
 
@@ -227,6 +228,10 @@ def zmq_to_cot(
     cot_messenger.start_receiver()
 
     # Initialize DroneManager with CotMessenger
+    # Make a list for extra sinks (e.g., Lattice). Keep manager.py dependency-free.
+    extra_sinks = []
+    if lattice_sink is not None:
+        extra_sinks.append(lattice_sink)
     drone_manager = DroneManager(
         max_drones=max_drones,
         rate_limit=rate_limit,
@@ -235,7 +240,8 @@ def zmq_to_cot(
         mqtt_enabled=config["mqtt_enabled"],
         mqtt_host=config["mqtt_host"],
         mqtt_port=config["mqtt_port"],
-        mqtt_topic=config["mqtt_topic"]
+        mqtt_topic=config["mqtt_topic"],
+        extra_sinks=extra_sinks,
     )
 
     def signal_handler(sig, frame):
@@ -646,6 +652,13 @@ def zmq_to_cot(
                 # Sending CoT message via CotMessenger
                 cot_messenger.send_cot(cot_xml)
                 logger.info(f"Sent CoT message to TAK/multicast.")
+                
+                # ---- also publish WarDragon (ground sensor) to Lattice if enabled ----
+                if lattice_sink is not None:
+                    try:
+                        lattice_sink.publish_system(status_message)
+                    except Exception as e:
+                        logger.warning(f"Lattice publish_system failed: {e}")
 
             # Send drone updates via DroneManager
             drone_manager.send_updates()
@@ -681,6 +694,13 @@ if __name__ == "__main__":
     parser.add_argument("--mqtt-host", type=str, help="MQTT broker host")
     parser.add_argument("--mqtt-port", type=int, help="MQTT broker port")
     parser.add_argument("--mqtt-topic", type=str, help="MQTT topic for drone messages")
+    # ---- Lattice (optional) ----
+    parser.add_argument("--lattice-enabled", action="store_true", help="Enable publishing to Lattice")
+    parser.add_argument("--lattice-token", type=str, help="Lattice API token (or set LATTICE_TOKEN env)")
+    parser.add_argument("--lattice-base-url", type=str, help="Lattice base URL, e.g. https://your.env.anduril.cloud (or env LATTICE_BASE_URL)")
+    parser.add_argument("--lattice-source-name", type=str, help="Provenance source name (or env LATTICE_SOURCE_NAME)")
+    parser.add_argument("--lattice-drone-rate", type=float, help="Drone publish rate to Lattice (Hz)")
+    parser.add_argument("--lattice-wd-rate", type=float, help="WarDragon publish rate to Lattice (Hz)")
     args = parser.parse_args()
 
     # Load config file if provided
@@ -732,7 +752,14 @@ if __name__ == "__main__":
         "mqtt_enabled": args.mqtt_enabled if hasattr(args, "mqtt_enabled") and args.mqtt_enabled is not None else get_bool(config_values.get("mqtt_enabled", False)),
         "mqtt_host": args.mqtt_host if hasattr(args, "mqtt_host") and args.mqtt_host is not None else get_str(config_values.get("mqtt_host", "127.0.0.1")),
         "mqtt_port": args.mqtt_port if hasattr(args, "mqtt_port") and args.mqtt_port is not None else get_int(config_values.get("mqtt_port", 1883)),
-        "mqtt_topic": args.mqtt_topic if hasattr(args, "mqtt_topic") and args.mqtt_topic is not None else get_str(config_values.get("mqtt_topic", "wardragon/drones"))
+        "mqtt_topic": args.mqtt_topic if hasattr(args, "mqtt_topic") and args.mqtt_topic is not None else get_str(config_values.get("mqtt_topic", "wardragon/drones")),
+        # ---- Lattice (optional) config block ----
+        "lattice_enabled": args.lattice_enabled or get_bool(config_values.get("lattice_enabled", False)),
+        "lattice_token": args.lattice_token if args.lattice_token is not None else (os.getenv("LATTICE_TOKEN") or get_str(config_values.get("lattice_token"))),
+        "lattice_base_url": args.lattice_base_url if args.lattice_base_url is not None else (os.getenv("LATTICE_BASE_URL") or get_str(config_values.get("lattice_base_url"))),
+        "lattice_source_name": args.lattice_source_name if args.lattice_source_name is not None else (os.getenv("LATTICE_SOURCE_NAME") or get_str(config_values.get("lattice_source_name", "DragonSync"))),
+        "lattice_drone_rate": args.lattice_drone_rate if args.lattice_drone_rate is not None else get_float(config_values.get("lattice_drone_rate", 1.0)),
+        "lattice_wd_rate": args.lattice_wd_rate if args.lattice_wd_rate is not None else get_float(config_values.get("lattice_wd_rate", 0.2)),
     }
 
     if config["mqtt_enabled"] and mqtt is None:
@@ -753,6 +780,31 @@ if __name__ == "__main__":
         tak_tls_skip_verify=config["tak_tls_skip_verify"]
     ) if config["tak_protocol"] == 'TCP' and config["tak_tls_p12"] else None
 
+    # ---- Optional Lattice sink construction (import-protected) ----
+    lattice_sink = None
+    if config["lattice_enabled"]:
+        try:
+            from lattice_sink import LatticeSink  # local helper that wraps the Lattice SDK
+        except Exception as e:
+            logger.warning(f"Lattice enabled, but lattice_sink import failed: {e}")
+            LatticeSink = None  # type: ignore
+        if "LatticeSink" in locals() and LatticeSink is not None:
+            token = config["lattice_token"]
+            if not token:
+                logger.warning("Lattice enabled, but no token provided (set --lattice-token or env LATTICE_TOKEN). Disabling.")
+            else:
+                try:
+                    lattice_sink = LatticeSink(
+                        token=token,
+                        base_url=config["lattice_base_url"],
+                        drone_hz=config["lattice_drone_rate"],
+                        wardragon_hz=config["lattice_wd_rate"],
+                        source_name=config["lattice_source_name"],
+                    )
+                    logger.info("Lattice sink enabled.")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize Lattice sink: {e}")
+
     zmq_to_cot(
         zmq_host=config["zmq_host"],
         zmq_port=config["zmq_port"],
@@ -769,5 +821,6 @@ if __name__ == "__main__":
         inactivity_timeout=config["inactivity_timeout"],
         multicast_interface=config["tak_multicast_interface"],
         multicast_ttl=config["multicast_ttl"],
-        enable_receive=config["enable_receive"]
+        enable_receive=config["enable_receive"],
+        lattice_sink=lattice_sink,
     )
