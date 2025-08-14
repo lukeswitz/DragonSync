@@ -25,10 +25,11 @@ SOFTWARE.
 import logging
 import time
 from typing import Optional, Dict, Any
-
 import datetime as dt
 
+# ---------- Robust imports & introspection ----------
 try:
+    import anduril
     from anduril import Lattice
     from anduril import (
         Location,
@@ -40,30 +41,40 @@ try:
         Classification,
         ClassificationInformation,
     )
-    # Prefer the actual enum from the SDK if available
-    try:
-        from anduril.entities.types.mil_view import Environment as MilEnvironment  # type: ignore
-    except Exception:
-        MilEnvironment = None  # type: ignore
-
-    # Optional: used if we need per-request headers
-    try:
-        from anduril.core.request_options import RequestOptions
-    except Exception:
-        RequestOptions = None  # type: ignore
 except Exception as e:
-    # Defer import failure until someone actually tries to construct the sink.
     Lattice = None  # type: ignore
     Location = Position = MilView = Ontology = Provenance = Aliases = None  # type: ignore
     Classification = ClassificationInformation = None  # type: ignore
-    RequestOptions = None  # type: ignore
-    MilEnvironment = None  # type: ignore
     _IMPORT_ERROR = e
 else:
     _IMPORT_ERROR = None
 
+# Try multiple enum locations (SDKs move this around)
+MilEnvironment = None  # type: ignore
+for path in [
+    "anduril.entities.types.mil_view",
+    "anduril.entities.v1.mil_view",
+    "anduril.types.mil_view",
+]:
+    try:
+        mod = __import__(path, fromlist=["Environment"])
+        MilEnvironment = getattr(mod, "Environment")  # enum class
+        break
+    except Exception:
+        pass
+
+# Optional per-request header support
+try:
+    from anduril.core.request_options import RequestOptions
+except Exception:
+    RequestOptions = None  # type: ignore
 
 _log = logging.getLogger(__name__)
+_log.info("LatticeSink ACTIVE. file=%s", __file__)
+try:
+    _log.info("anduril SDK version: %s", getattr(anduril, "__version__", "unknown"))
+except Exception:
+    pass
 
 
 def _now_utc() -> dt.datetime:
@@ -81,50 +92,38 @@ def _valid_latlon(lat: Optional[float], lon: Optional[float]) -> bool:
 
 def _env(value: str):
     """
-    Map loose strings like 'ground', 'AIR' to the proper Lattice enum when available,
-    otherwise return the exact string constant expected by the API as a safe fallback.
+    Return a MilView environment value that the SDK will serialize correctly.
+    Prefers the real enum if available; falls back to the exact wire string.
     """
     v = (value or "").strip().upper().replace("-", "_")
+    # Enum path (best)
     if MilEnvironment is not None:
-        if v in ("GROUND", "ENVIRONMENT_GROUND"):
-            return MilEnvironment.ENVIRONMENT_GROUND
-        if v in ("AIR", "ENVIRONMENT_AIR"):
-            return MilEnvironment.ENVIRONMENT_AIR
-        if v in ("SURFACE", "SEA", "ENVIRONMENT_SURFACE"):
-            return MilEnvironment.ENVIRONMENT_SURFACE
-        if v in ("SUBSURFACE", "UNDERSEA", "ENVIRONMENT_SUBSURFACE"):
-            return MilEnvironment.ENVIRONMENT_SUBSURFACE
-        if v in ("SPACE", "ENVIRONMENT_SPACE"):
-            return MilEnvironment.ENVIRONMENT_SPACE
-    # String fallback (exact wire values)
-    if v in ("GROUND", "ENVIRONMENT_GROUND"):
-        return "ENVIRONMENT_GROUND"
-    if v in ("AIR", "ENVIRONMENT_AIR"):
-        return "ENVIRONMENT_AIR"
-    if v in ("SURFACE", "SEA", "ENVIRONMENT_SURFACE"):
-        return "ENVIRONMENT_SURFACE"
-    if v in ("SUBSURFACE", "UNDERSEA", "ENVIRONMENT_SUBSURFACE"):
-        return "ENVIRONMENT_SUBSURFACE"
-    if v in ("SPACE", "ENVIRONMENT_SPACE"):
-        return "ENVIRONMENT_SPACE"
+        mapping = {
+            "GROUND": getattr(MilEnvironment, "ENVIRONMENT_GROUND", None),
+            "AIR": getattr(MilEnvironment, "ENVIRONMENT_AIR", None),
+            "SURFACE": getattr(MilEnvironment, "ENVIRONMENT_SURFACE", None),
+            "SUBSURFACE": getattr(MilEnvironment, "ENVIRONMENT_SUBSURFACE", None),
+            "SPACE": getattr(MilEnvironment, "ENVIRONMENT_SPACE", None),
+        }
+        if v in mapping and mapping[v] is not None:
+            return mapping[v]
+    # Exact wire string fallback
+    strings = {
+        "GROUND": "ENVIRONMENT_GROUND",
+        "AIR": "ENVIRONMENT_AIR",
+        "SURFACE": "ENVIRONMENT_SURFACE",
+        "SUBSURFACE": "ENVIRONMENT_SUBSURFACE",
+        "SPACE": "ENVIRONMENT_SPACE",
+    }
+    if v in strings:
+        return strings[v]
     raise ValueError(f"Unknown environment value: {value!r}")
 
 
 class LatticeSink:
-    """Minimal pub helper for entities via the Anduril Lattice SDK.
-
-    - Supports *environment* token (Authorization header) and optional *sandbox* token
-      through the custom header `anduril-sandbox-authorization: Bearer <token>`.
-    - Mirrors the example app behavior (client-level header), with a safe fallback
-      to per-request headers if this SDK build doesn't accept `headers=` on init.
-
-    Args:
-        token: Environment token (a.k.a. LATTICE_TOKEN / ENVIRONMENT_TOKEN).
-        base_url: Full base URL, e.g. "https://your-sandbox.anduril.cloud".
-        drone_hz: Max drone publish frequency (Hz).
-        wardragon_hz: Max WarDragon status publish frequency (Hz).
-        source_name: Provenance integration name (e.g. "DragonSync").
-        sandbox_token: Optional Sandboxes token to route into a specific sandbox.
+    """
+    Helper publisher for Lattice via Anduril SDK.
+    Supports environment token + optional sandboxes token (client-level header when supported).
     """
 
     def __init__(
@@ -145,32 +144,33 @@ class LatticeSink:
         self._sandbox_token = (sandbox_token or "").strip() or None
         self.source_name = source_name
 
-        # Build client with client-level headers if supported; otherwise fall back
         headers = {"anduril-sandbox-authorization": f"Bearer {self._sandbox_token}"} if self._sandbox_token else None
         self._req_opts = None
+
         try:
-            # primary path (matches example app)
+            # Preferred path (newer SDKs)
             if base_url:
                 self.client = Lattice(token=token, base_url=base_url, headers=headers)  # type: ignore
             else:
                 self.client = Lattice(token=token, headers=headers)  # type: ignore
+            _log.info("Lattice client constructed with client-level headers=%s", bool(headers))
         except TypeError:
-            # fallback path: older SDKs without headers= on constructor
+            # Fallback (older SDKs)
             if base_url:
                 self.client = Lattice(token=token, base_url=base_url)  # type: ignore
             else:
                 self.client = Lattice(token=token)  # type: ignore
-
             if self._sandbox_token and RequestOptions is not None:
                 self._req_opts = RequestOptions(
                     additional_headers={"anduril-sandbox-authorization": f"Bearer {self._sandbox_token}"}
                 )
+            _log.info("Lattice client constructed; per-request headers=%s", bool(self._req_opts))
 
-        # simple rate limiters
+        # Simple rate limiting
         self._periods = {
             "drone": 1.0 / max(drone_hz, 1e-6),
             "wd": 1.0 / max(wardragon_hz, 1e-6),
-            "pilot": 1.0,  # reasonable default
+            "pilot": 1.0,
             "home": 1.0,
         }
         self._last_send = {k: 0.0 for k in self._periods.keys()}
@@ -185,7 +185,6 @@ class LatticeSink:
     # --------------------------- WarDragon (ground sensor) ---------------------------
 
     def publish_system(self, s: Dict[str, Any]) -> None:
-        """Publish WarDragon ground-sensor status as a track in GROUND env."""
         if not self._rate_ok("wd"):
             return
 
@@ -196,11 +195,7 @@ class LatticeSink:
             return
 
         entity_id = f"wardragon-{serial}"
-        display = f"WarDragon {serial}"
-
-        # Typed components
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
-        # Altitude is optional; include if present and numeric
         try:
             if hae is not None:
                 location.position.height_above_ellipsoid_meters = float(hae)  # type: ignore
@@ -208,14 +203,19 @@ class LatticeSink:
             pass
 
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Ground Sensor")
-        # >>> enum-safe environment <<<
-        mil_view = MilView(environment=_env("GROUND"), disposition="DISPOSITION_NEUTRAL")
+
+        # >>> enum-safe env <<<
+        env_val = _env("GROUND")
+        mil_view = MilView(environment=env_val, disposition="DISPOSITION_NEUTRAL")
+
+        _log.error("[DBG] system env about to send: %r  type=%s", getattr(mil_view, "environment", None),
+                   type(getattr(mil_view, "environment", None)))
+
         provenance = Provenance(
             data_type="wardragon-status",
             integration_name=self.source_name,
             source_update_time=_now_utc().isoformat(),
         )
-        aliases = Aliases(display_name=display)
         expiry_time = _now_utc() + dt.timedelta(minutes=10)
 
         try:
@@ -226,12 +226,12 @@ class LatticeSink:
                 ontology=ontology,
                 mil_view=mil_view,
                 provenance=provenance,
-                aliases=aliases,
+                aliases=Aliases(display_name=f"WarDragon {serial}"),
                 expiry_time=expiry_time,
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
                 ),
-                request_options=self._req_opts,  # no-op if None
+                request_options=self._req_opts,
             )
         except Exception as e:
             _log.warning(f"Lattice publish_system failed for {entity_id}: {e}")
@@ -239,11 +239,9 @@ class LatticeSink:
     # ------------------------------- Drone (air track) -------------------------------
 
     def publish_drone(self, d: Any) -> None:
-        """Publish/refresh a drone entity from your Drone object/dict."""
         if not self._rate_ok("drone"):
             return
 
-        # Support both object and dict
         g = (lambda k, default=None: getattr(d, k, d.get(k, default)) if isinstance(d, dict) else getattr(d, k, default))
 
         entity_id = str(g("id", "unknown")) or "unknown"
@@ -251,7 +249,6 @@ class LatticeSink:
         if not _valid_latlon(lat, lon):
             return
 
-        # Build typed components
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
         try:
             if hae is not None:
@@ -259,11 +256,14 @@ class LatticeSink:
         except Exception:
             pass
 
-        display = entity_id
-        aliases = Aliases(display_name=display)
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Small UAS")
-        # >>> enum-safe environment <<<
-        mil_view = MilView(environment=_env("AIR"), disposition="DISPOSITION_NEUTRAL")
+
+        env_val = _env("AIR")
+        mil_view = MilView(environment=env_val, disposition="DISPOSITION_NEUTRAL")
+
+        _log.error("[DBG] drone env about to send: %r  type=%s", getattr(mil_view, "environment", None),
+                   type(getattr(mil_view, "environment", None)))
+
         provenance = Provenance(
             data_type="drone-telemetry",
             integration_name=self.source_name,
@@ -279,7 +279,7 @@ class LatticeSink:
                 ontology=ontology,
                 mil_view=mil_view,
                 provenance=provenance,
-                aliases=aliases,
+                aliases=Aliases(display_name=entity_id),
                 expiry_time=expiry_time,
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
@@ -297,35 +297,34 @@ class LatticeSink:
         if not _valid_latlon(lat, lon):
             return
 
-        entity_id = f"{entity_base_id}-pilot"
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
-        ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Operator")
-        # >>> enum-safe environment <<<
-        mil_view = MilView(environment=_env("GROUND"), disposition="DISPOSITION_FRIEND")
-        provenance = Provenance(
-            data_type="pilot-position",
-            integration_name=self.source_name,
-            source_update_time=_now_utc().isoformat(),
-        )
-        expiry_time = _now_utc() + dt.timedelta(minutes=30)
+        env_val = _env("GROUND")
+        mil_view = MilView(environment=env_val, disposition="DISPOSITION_FRIEND")
+
+        _log.error("[DBG] pilot env about to send: %r  type=%s", getattr(mil_view, "environment", None),
+                   type(getattr(mil_view, "environment", None)))
 
         try:
             self.client.entities.publish_entity(
-                entity_id=entity_id,
+                entity_id=f"{entity_base_id}-pilot",
                 is_live=True,
                 location=location,
-                ontology=ontology,
+                ontology=Ontology(template="TEMPLATE_TRACK", platform_type="Operator"),
                 mil_view=mil_view,
-                provenance=provenance,
+                provenance=Provenance(
+                    data_type="pilot-position",
+                    integration_name=self.source_name,
+                    source_update_time=_now_utc().isoformat(),
+                ),
                 aliases=Aliases(display_name=f"Pilot of {entity_base_id}"),
-                expiry_time=expiry_time,
+                expiry_time=_now_utc() + dt.timedelta(minutes=30),
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
                 ),
                 request_options=self._req_opts,
             )
         except Exception as e:
-            _log.warning(f"Lattice publish_pilot failed for {entity_id}: {e}")
+            _log.warning(f"Lattice publish_pilot failed for {entity_base_id}: {e}")
 
     def publish_home(self, entity_base_id: str, lat: float, lon: float) -> None:
         if not self._rate_ok("home"):
@@ -333,32 +332,31 @@ class LatticeSink:
         if not _valid_latlon(lat, lon):
             return
 
-        entity_id = f"{entity_base_id}-home"
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
-        ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Home Point")
-        # >>> enum-safe environment <<<
-        mil_view = MilView(environment=_env("GROUND"), disposition="DISPOSITION_FRIEND")
-        provenance = Provenance(
-            data_type="home-position",
-            integration_name=self.source_name,
-            source_update_time=_now_utc().isoformat(),
-        )
-        expiry_time = _now_utc() + dt.timedelta(hours=4)
+        env_val = _env("GROUND")
+        mil_view = MilView(environment=env_val, disposition="DISPOSITION_FRIEND")
+
+        _log.error("[DBG] home env about to send: %r  type=%s", getattr(mil_view, "environment", None),
+                   type(getattr(mil_view, "environment", None)))
 
         try:
             self.client.entities.publish_entity(
-                entity_id=entity_id,
+                entity_id=f"{entity_base_id}-home",
                 is_live=True,
                 location=location,
-                ontology=ontology,
+                ontology=Ontology(template="TEMPLATE_TRACK", platform_type="Home Point"),
                 mil_view=mil_view,
-                provenance=provenance,
+                provenance=Provenance(
+                    data_type="home-position",
+                    integration_name=self.source_name,
+                    source_update_time=_now_utc().isoformat(),
+                ),
                 aliases=Aliases(display_name=f"Home of {entity_base_id}"),
-                expiry_time=expiry_time,
+                expiry_time=_now_utc() + dt.timedelta(hours=4),
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
                 ),
                 request_options=self._req_opts,
             )
         except Exception as e:
-            _log.warning(f"Lattice publish_home failed for {entity_id}: {e}")
+            _log.warning(f"Lattice publish_home failed for {entity_base_id}: {e}")
