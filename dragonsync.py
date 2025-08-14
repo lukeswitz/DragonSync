@@ -1,7 +1,7 @@
 """
 MIT License
 
-Copyright (c) 2024 cemaxecuter
+Copyright (c) 2025 cemaxecuter
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -228,21 +228,34 @@ def zmq_to_cot(
     cot_messenger.start_receiver()
 
     # Initialize DroneManager with CotMessenger
-    # Make a list for extra sinks (e.g., Lattice). Keep manager.py dependency-free.
+    # If your DroneManager supports extra_sinks, use it. If not, fall back safely.
     extra_sinks = []
     if lattice_sink is not None:
         extra_sinks.append(lattice_sink)
-    drone_manager = DroneManager(
-        max_drones=max_drones,
-        rate_limit=rate_limit,
-        inactivity_timeout=inactivity_timeout,
-        cot_messenger=cot_messenger,
-        mqtt_enabled=config["mqtt_enabled"],
-        mqtt_host=config["mqtt_host"],
-        mqtt_port=config["mqtt_port"],
-        mqtt_topic=config["mqtt_topic"],
-        extra_sinks=extra_sinks,
-    )
+    try:
+        drone_manager = DroneManager(
+            max_drones=max_drones,
+            rate_limit=rate_limit,
+            inactivity_timeout=inactivity_timeout,
+            cot_messenger=cot_messenger,
+            mqtt_enabled=config["mqtt_enabled"],
+            mqtt_host=config["mqtt_host"],
+            mqtt_port=config["mqtt_port"],
+            mqtt_topic=config["mqtt_topic"],
+            extra_sinks=extra_sinks,  # may raise TypeError on older manager.py
+        )
+    except TypeError:
+        # Older manager.py without extra_sinks parameter
+        drone_manager = DroneManager(
+            max_drones=max_drones,
+            rate_limit=rate_limit,
+            inactivity_timeout=inactivity_timeout,
+            cot_messenger=cot_messenger,
+            mqtt_enabled=config["mqtt_enabled"],
+            mqtt_host=config["mqtt_host"],
+            mqtt_port=config["mqtt_port"],
+            mqtt_topic=config["mqtt_topic"],
+        )
 
     def signal_handler(sig, frame):
         """Handles signal interruptions for graceful shutdown."""
@@ -309,7 +322,7 @@ def zmq_to_cot(
                                          if v.lower() == str(raw_ua).lower()),
                                         None
                                     )
-                            # reject out‑of‑range
+                            # reject out-of-range
                             if ua_code not in UA_TYPE_MAPPING:
                                 ua_code = None
                             ua_name = UA_TYPE_MAPPING.get(ua_code, 'Unknown')
@@ -361,7 +374,7 @@ def zmq_to_cot(
                             drone_info['timestamp']           = loc.get('timestamp', "")
                             drone_info['timestamp_accuracy']  = loc.get('timestamp_accuracy', "")
 
-                        # ─── Self‑ID Message ───────────────────────────────────────
+                        # ─── Self-ID Message ───────────────────────────────────────
                         if 'Self-ID Message' in item:
                             drone_info['description'] = item['Self-ID Message'].get('text', "")
 
@@ -651,9 +664,9 @@ def zmq_to_cot(
 
                 # Sending CoT message via CotMessenger
                 cot_messenger.send_cot(cot_xml)
-                logger.info(f"Sent CoT message to TAK/multicast.")
+                logger.info("Sent CoT message to TAK/multicast.")
                 
-                # ---- also publish WarDragon (ground sensor) to Lattice if enabled ----
+                # Also publish WarDragon (ground sensor) to Lattice if enabled
                 if lattice_sink is not None:
                     try:
                         lattice_sink.publish_system(status_message)
@@ -696,9 +709,10 @@ if __name__ == "__main__":
     parser.add_argument("--mqtt-topic", type=str, help="MQTT topic for drone messages")
     # ---- Lattice (optional) ----
     parser.add_argument("--lattice-enabled", action="store_true", help="Enable publishing to Lattice")
-    parser.add_argument("--lattice-token", type=str, help="Lattice API token (or set LATTICE_TOKEN env)")
-    parser.add_argument("--lattice-base-url", type=str, help="Lattice base URL, e.g. https://your.env.anduril.cloud (or env LATTICE_BASE_URL)")
-    parser.add_argument("--lattice-endpoint", type=str, help="Lattice endpoint host, e.g. foo.anduril.cloud (or env LATTICE_ENDPOINT)")
+    parser.add_argument("--lattice-token", type=str, help="Lattice environment token (or env LATTICE_TOKEN / ENVIRONMENT_TOKEN)")
+    parser.add_argument("--lattice-base-url", type=str, help="Full base URL, e.g. https://lattice-XXXX.env.sandboxes.developer.anduril.com (or env LATTICE_BASE_URL)")
+    parser.add_argument("--lattice-endpoint", type=str, help="Endpoint host only (no scheme) to build base_url, e.g. lattice-XXXX.env.sandboxes.developer.anduril.com (or env LATTICE_ENDPOINT)")
+    parser.add_argument("--lattice-sandbox-token", type=str, help="Sandboxes Bearer token (or env SANDBOXES_TOKEN / LATTICE_SANDBOX_TOKEN)")
     parser.add_argument("--lattice-source-name", type=str, help="Provenance source name (or env LATTICE_SOURCE_NAME)")
     parser.add_argument("--lattice-drone-rate", type=float, help="Drone publish rate to Lattice (Hz)")
     parser.add_argument("--lattice-wd-rate", type=float, help="WarDragon publish rate to Lattice (Hz)")
@@ -755,11 +769,26 @@ if __name__ == "__main__":
         "mqtt_port": args.mqtt_port if hasattr(args, "mqtt_port") and args.mqtt_port is not None else get_int(config_values.get("mqtt_port", 1883)),
         "mqtt_topic": args.mqtt_topic if hasattr(args, "mqtt_topic") and args.mqtt_topic is not None else get_str(config_values.get("mqtt_topic", "wardragon/drones")),
         # ---- Lattice (optional) config block ----
-        "lattice_enabled": args.lattice_enabled or get_bool(config_values.get("lattice_enabled", False)),
-        "lattice_token": args.lattice_token if args.lattice_token is not None else (os.getenv("LATTICE_TOKEN") or get_str(config_values.get("lattice_token"))),
-        "lattice_base_url": args.lattice_base_url if args.lattice_base_url is not None else (os.getenv("LATTICE_BASE_URL") or get_str(config_values.get("lattice_base_url"))),
-        "lattice_endpoint": args.lattice_endpoint if args.lattice_endpoint is not None else (os.getenv("LATTICE_ENDPOINT") or get_str(config_values.get("lattice_endpoint"))),
-        "lattice_source_name": args.lattice_source_name if args.lattice_source_name is not None else (os.getenv("LATTICE_SOURCE_NAME") or get_str(config_values.get("lattice_source_name", "DragonSync"))),
+        "lattice_enabled": args.lattice_enabled or get_bool(config_values.get("lattice_enabled"), False),
+        # Environment (Authorization) token
+        "lattice_token": args.lattice_token if args.lattice_token is not None else (
+            os.getenv("LATTICE_TOKEN") or os.getenv("ENVIRONMENT_TOKEN") or get_str(config_values.get("lattice_token"))
+        ),
+        # Prefer full base URL if provided
+        "lattice_base_url": args.lattice_base_url if args.lattice_base_url is not None else (
+            os.getenv("LATTICE_BASE_URL") or get_str(config_values.get("lattice_base_url"))
+        ),
+        # Or endpoint host to build base_url
+        "lattice_endpoint": args.lattice_endpoint if args.lattice_endpoint is not None else (
+            os.getenv("LATTICE_ENDPOINT") or get_str(config_values.get("lattice_endpoint"))
+        ),
+        # Sandboxes token for anduril-sandbox-authorization
+        "lattice_sandbox_token": args.lattice_sandbox_token if args.lattice_sandbox_token is not None else (
+            os.getenv("SANDBOXES_TOKEN") or os.getenv("LATTICE_SANDBOX_TOKEN") or get_str(config_values.get("lattice_sandbox_token"))
+        ),
+        "lattice_source_name": args.lattice_source_name if args.lattice_source_name is not None else (
+            os.getenv("LATTICE_SOURCE_NAME") or get_str(config_values.get("lattice_source_name", "DragonSync"))
+        ),
         "lattice_drone_rate": args.lattice_drone_rate if args.lattice_drone_rate is not None else get_float(config_values.get("lattice_drone_rate", 1.0)),
         "lattice_wd_rate": args.lattice_wd_rate if args.lattice_wd_rate is not None else get_float(config_values.get("lattice_wd_rate", 0.2)),
     }
@@ -791,26 +820,32 @@ if __name__ == "__main__":
             logger.warning(f"Lattice enabled, but lattice_sink import failed: {e}")
             LatticeSink = None  # type: ignore
         if "LatticeSink" in locals() and LatticeSink is not None:
-            token = config["lattice_token"]
+            token = (config.get("lattice_token") or "").strip()
             if not token:
-                logger.warning("Lattice enabled, but no token provided (set --lattice-token or env LATTICE_TOKEN). Disabling.")
+                logger.warning("Lattice enabled, but no environment token provided (set --lattice-token or env LATTICE_TOKEN/ENVIRONMENT_TOKEN). Disabling.")
             else:
                 try:
-                    # Prefer explicit base_url; otherwise build from endpoint host if provided.
-                    base_url = config["lattice_base_url"]
-                    if not base_url and config.get("lattice_endpoint"):
-                        base_url = f"https://{config['lattice_endpoint']}"
+                    # Resolve base_url
+                    base_url = (config.get("lattice_base_url") or "").strip()
+                    if not base_url:
+                        endpoint = (config.get("lattice_endpoint") or "").strip()
+                        if endpoint:
+                            base_url = endpoint if endpoint.startswith(("http://", "https://")) else f"https://{endpoint}"
+                    sb = (config.get("lattice_sandbox_token") or "").strip()
+                    env_tok_len = len(token)
+                    sb_tok_len = len(sb)
+                    logger.debug(f"Lattice base_url resolved: {base_url!r}, env_token_len={env_tok_len}, sandbox_token_len={sb_tok_len}")
                     lattice_sink = LatticeSink(
                         token=token,
-                        base_url=base_url,
-                        drone_hz=config["lattice_drone_rate"],
-                        wardragon_hz=config["lattice_wd_rate"],
-                        source_name=config["lattice_source_name"],
-                        sandbox_token=config["lattice_sandbox_token"],
+                        base_url=base_url or None,
+                        drone_hz=config.get("lattice_drone_rate", 1.0),
+                        wardragon_hz=config.get("lattice_wd_rate", 0.2),
+                        source_name=config.get("lattice_source_name", "DragonSync"),
+                        sandbox_token=sb or None,
                     )
                     logger.info("Lattice sink enabled.")
                 except Exception as e:
-                    logger.warning(f"Failed to initialize Lattice sink: {e}")
+                    logger.exception(f"Failed to initialize Lattice sink: {e}")
 
     zmq_to_cot(
         zmq_host=config["zmq_host"],
