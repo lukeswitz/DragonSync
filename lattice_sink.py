@@ -165,8 +165,11 @@ class LatticeSink:
                 )
             _log.info("LatticeSink ACTIVE. file=%s", os.path.abspath(__file__))
             _log.info("anduril SDK version: %s", _SDK_VERSION)
-            _log.info("Lattice client constructed with client-level headers=%s; per-request headers=%s",
-                      False, bool(self._req_opts))
+            _log.info(
+                "Lattice client constructed with client-level headers=%s; per-request headers=%s",
+                False,
+                bool(self._req_opts),
+            )
 
         # Simple rate limiters
         self._periods = {
@@ -202,7 +205,7 @@ class LatticeSink:
             return
 
         entity_id = f"wardragon-{serial}"
-        display = f"WarDragon {serial}"
+        alias_name = f"WarDragon {serial}"
 
         # Location / position
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
@@ -223,7 +226,7 @@ class LatticeSink:
             integration_name=self.source_name,
             source_update_time=_now_utc().isoformat(),
         )
-        aliases = Aliases(display_name=display)
+        aliases = Aliases(name=alias_name)  # <-- REQUIRED: aliases.name must be non-empty
         expiry_time = _now_utc() + dt.timedelta(minutes=10)
 
         try:
@@ -274,8 +277,7 @@ class LatticeSink:
         except Exception:
             pass
 
-        display = entity_id
-        aliases = Aliases(display_name=display)
+        aliases = Aliases(name=entity_id)
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Small UAS")
 
         # Keep environment=AIR (works in other examples)
@@ -317,6 +319,7 @@ class LatticeSink:
             return
 
         entity_id = f"{entity_base_id}-pilot"
+        alias_name = f"Pilot of {entity_base_id}"
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Operator")
 
@@ -338,7 +341,7 @@ class LatticeSink:
                 ontology=ontology,
                 mil_view=mil_view,
                 provenance=provenance,
-                aliases=Aliases(display_name=f"Pilot of {entity_base_id}"),
+                aliases=Aliases(name=alias_name),
                 expiry_time=expiry_time,
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
@@ -355,6 +358,7 @@ class LatticeSink:
             return
 
         entity_id = f"{entity_base_id}-home"
+        alias_name = f"Home of {entity_base_id}"
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Home Point")
 
@@ -376,7 +380,7 @@ class LatticeSink:
                 ontology=ontology,
                 mil_view=mil_view,
                 provenance=provenance,
-                aliases=Aliases(display_name=f"Home of {entity_base_id}"),
+                aliases=Aliases(name=alias_name),
                 expiry_time=expiry_time,
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
