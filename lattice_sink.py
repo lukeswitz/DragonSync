@@ -22,20 +22,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from typing import Optional, Dict, Any
 import datetime as dt
 import os
 
-# --- Anduril SDK imports & version info ----------------------------------------
+# ────────────────────────────────────────────────────────────────────────────────
+# Anduril SDK imports
+# ────────────────────────────────────────────────────────────────────────────────
 try:
-    import anduril as _anduril_pkg  # only for __version__
-    _SDK_VERSION = getattr(_anduril_pkg, "__version__", "unknown")
-except Exception:
-    _SDK_VERSION = "unknown"
-
-try:
+    import anduril as _anduril_mod  # for __version__
     from anduril import Lattice
     from anduril import (
         Location,
@@ -47,36 +46,39 @@ try:
         Classification,
         ClassificationInformation,
     )
-
-    # Prefer proper enums if the SDK exposes them
+    # Optional enum (names differ across SDKs; we only use it for AIR)
     try:
-        from anduril import MilViewEnvironment, MilViewDisposition  # SDK >= certain versions
+        # Most SDKs expose Environment enum like this:
+        from anduril.entities.types.mil_view import Environment as MilEnvironment  # type: ignore
     except Exception:
-        MilViewEnvironment = None  # type: ignore
-        MilViewDisposition = None  # type: ignore
+        MilEnvironment = None  # type: ignore
 
-    # Optional request-level headers (older SDKs don’t accept headers= in ctor)
+    # Optional: some SDK versions support per-request extra headers
     try:
-        from anduril.core.request_options import RequestOptions
+        from anduril.core.request_options import RequestOptions  # type: ignore
     except Exception:
         RequestOptions = None  # type: ignore
 
 except Exception as e:
-    # Defer import failure until someone constructs the sink
+    # Defer import failure until someone actually tries to construct the sink.
+    _IMPORT_ERROR = e
     Lattice = None  # type: ignore
     Location = Position = MilView = Ontology = Provenance = Aliases = None  # type: ignore
     Classification = ClassificationInformation = None  # type: ignore
+    MilEnvironment = None  # type: ignore
     RequestOptions = None  # type: ignore
-    MilViewEnvironment = MilViewDisposition = None  # type: ignore
-    _IMPORT_ERROR = e
+    _SDK_VERSION = "unknown"
 else:
     _IMPORT_ERROR = None
+    _SDK_VERSION = getattr(_anduril_mod, "__version__", "unknown")
 
 
-_log = logging.getLogger("lattice_sink")
+_log = logging.getLogger(__name__)
 
 
-# --- helpers -------------------------------------------------------------------
+# ────────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ────────────────────────────────────────────────────────────────────────────────
 def _now_utc() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
@@ -90,70 +92,36 @@ def _valid_latlon(lat: Optional[float], lon: Optional[float]) -> bool:
         return False
 
 
-def _mil_env_ground():
+def _air_env_value():
     """
-    Return a MilView environment value for GROUND:
-      - Prefer SDK enum if available
-      - Fall back to proto name literal required by backend
+    Return a value acceptable to MilView.environment for 'AIR'.
+
+    We prefer the SDK enum where available; fall back to the proto string that
+    is known-good in examples.
     """
-    if MilViewEnvironment is not None and hasattr(MilViewEnvironment, "MIL_VIEW_ENVIRONMENT_GROUND"):
-        return MilViewEnvironment.MIL_VIEW_ENVIRONMENT_GROUND
-    return "MIL_VIEW_ENVIRONMENT_GROUND"
+    if MilEnvironment is not None:
+        # Try both common enum names across SDKs
+        for attr in (
+            "MIL_VIEW_ENVIRONMENT_AIR",
+            "ENVIRONMENT_AIR",
+        ):
+            if hasattr(MilEnvironment, attr):
+                return getattr(MilEnvironment, attr)
+    return "ENVIRONMENT_AIR"
 
 
-def _mil_env_air():
-    if MilViewEnvironment is not None and hasattr(MilViewEnvironment, "MIL_VIEW_ENVIRONMENT_AIR"):
-        return MilViewEnvironment.MIL_VIEW_ENVIRONMENT_AIR
-    return "MIL_VIEW_ENVIRONMENT_AIR"
-
-
-def _mil_disp_neutral():
-    if MilViewDisposition is not None and hasattr(MilViewDisposition, "DISPOSITION_NEUTRAL"):
-        return MilViewDisposition.DISPOSITION_NEUTRAL
-    return "DISPOSITION_NEUTRAL"
-
-
-def _mil_disp_friend():
-    if MilViewDisposition is not None and hasattr(MilViewDisposition, "DISPOSITION_FRIEND"):
-        return MilViewDisposition.DISPOSITION_FRIEND
-    return "DISPOSITION_FRIEND"
-
-
-def _new_location(lat: float, lon: float, hae: Optional[float]) -> Location:
-    """
-    Build a Location with a Position and set whichever altitude attribute
-    the installed SDK supports.
-    """
-    loc = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
-    if hae is not None:
-        try:
-            # Newer schema
-            if hasattr(loc.position, "altitude_hae_meters"):
-                loc.position.altitude_hae_meters = float(hae)  # type: ignore
-            # Older schema used this name
-            elif hasattr(loc.position, "height_above_ellipsoid_meters"):
-                loc.position.height_above_ellipsoid_meters = float(hae)  # type: ignore
-        except Exception:
-            pass
-    return loc
-
-
-# --- main sink -----------------------------------------------------------------
+# ────────────────────────────────────────────────────────────────────────────────
+# LatticeSink
+# ────────────────────────────────────────────────────────────────────────────────
 class LatticeSink:
-    """Publisher for entities via the Anduril Lattice SDK.
+    """
+    Minimal publisher for entities via the Anduril Lattice SDK.
 
-    - Uses an *environment* token (Authorization) plus an optional *sandbox* token
-      sent as the header `anduril-sandbox-authorization: Bearer <token>`.
-    - Works across SDKs that either accept client-level `headers=` or require
-      per-request headers via RequestOptions.
-
-    Args:
-        token: Environment token (ENVIRONMENT_TOKEN / LATTICE_TOKEN).
-        base_url: Full URL, e.g. "https://<env>.sandboxes.developer.anduril.com".
-        drone_hz: Max drone publish frequency (Hz).
-        wardragon_hz: Max WarDragon status publish frequency (Hz).
-        source_name: Provenance integration name (e.g., "DragonSync").
-        sandbox_token: Optional Sandboxes token to route requests into a sandbox.
+    - Uses the *environment* token (Authorization header) and optional *sandbox*
+      token via 'anduril-sandbox-authorization: Bearer <token>'.
+    - For WarDragon/pilot/home (ground), we intentionally **omit** MilView.environment
+      due to sandbox enum parsing issues; server defaults are used.
+    - For drones (air), we still set MilView.environment to AIR.
     """
 
     def __init__(
@@ -174,47 +142,40 @@ class LatticeSink:
         self._sandbox_token = (sandbox_token or "").strip() or None
         self.source_name = source_name
 
-        # Client-level headers, if supported by this SDK build
+        # Build client with client-level headers if supported; otherwise fall back
         headers = {"anduril-sandbox-authorization": f"Bearer {self._sandbox_token}"} if self._sandbox_token else None
         self._req_opts = None
-
         try:
-            # Primary path
             if base_url:
                 self.client = Lattice(token=token, base_url=base_url, headers=headers)  # type: ignore
             else:
                 self.client = Lattice(token=token, headers=headers)  # type: ignore
-            client_headers = True
+            _log.info("LatticeSink ACTIVE. file=%s", os.path.abspath(__file__))
+            _log.info("anduril SDK version: %s", _SDK_VERSION)
+            _log.info("Lattice client constructed with client-level headers=%s", bool(headers))
         except TypeError:
-            # Fallback for SDKs with no headers= in constructor
+            # fallback path: older SDKs without headers= on constructor
             if base_url:
                 self.client = Lattice(token=token, base_url=base_url)  # type: ignore
             else:
                 self.client = Lattice(token=token)  # type: ignore
-            client_headers = False
-
             if self._sandbox_token and RequestOptions is not None:
                 self._req_opts = RequestOptions(
                     additional_headers={"anduril-sandbox-authorization": f"Bearer {self._sandbox_token}"}
                 )
+            _log.info("LatticeSink ACTIVE. file=%s", os.path.abspath(__file__))
+            _log.info("anduril SDK version: %s", _SDK_VERSION)
+            _log.info("Lattice client constructed with client-level headers=%s; per-request headers=%s",
+                      False, bool(self._req_opts))
 
-        # Simple rate limiting
+        # Simple rate limiters
         self._periods = {
             "drone": 1.0 / max(drone_hz, 1e-6),
             "wd": 1.0 / max(wardragon_hz, 1e-6),
-            "pilot": 1.0,
+            "pilot": 1.0,   # 1 Hz cap is plenty
             "home": 1.0,
         }
         self._last_send = {k: 0.0 for k in self._periods.keys()}
-
-        # Startup logs for troubleshooting
-        _log.info("LatticeSink ACTIVE. file=%s", os.path.abspath(__file__))
-        _log.info("anduril SDK version: %s", _SDK_VERSION)
-        if MilViewEnvironment is not None:
-            _log.info("MilView.environment provider: SDK enums (e.g. MIL_VIEW_ENVIRONMENT_GROUND)")
-        else:
-            _log.info("MilView.environment provider: proto strings (e.g. 'MIL_VIEW_ENVIRONMENT_GROUND')")
-        _log.info("Lattice client constructed with client-level headers=%s", client_headers)
 
     def _rate_ok(self, key: str) -> bool:
         now = time.time()
@@ -223,34 +184,44 @@ class LatticeSink:
             return True
         return False
 
-    # --------------------------- WarDragon (ground sensor) ---------------------------
-
+    # ───────────────────────────── WarDragon (ground sensor) ───────────────────────
     def publish_system(self, s: Dict[str, Any]) -> None:
-        """Publish WarDragon ground-sensor status as a track in GROUND env."""
+        """
+        Publish WarDragon ground-sensor status as a track.
+        NOTE: We OMIT MilView.environment to rely on server defaults.
+        """
         if not self._rate_ok("wd"):
             return
 
         serial = str(s.get("serial_number", "unknown")) or "unknown"
         gps = s.get("gps_data", {}) or {}
-        lat = gps.get("latitude"); lon = gps.get("longitude"); hae = gps.get("altitude")
+        lat = gps.get("latitude")
+        lon = gps.get("longitude")
+        hae = gps.get("altitude")
         if not _valid_latlon(lat, lon):
             return
 
         entity_id = f"wardragon-{serial}"
         display = f"WarDragon {serial}"
 
-        location = _new_location(float(lat), float(lon), hae)
+        # Location / position
+        location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
+        try:
+            if hae is not None:
+                # Height above ellipsoid is optional; ignore parse failure
+                location.position.height_above_ellipsoid_meters = float(hae)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Ground Sensor")
 
-        environment = _mil_env_ground()
-        disposition = _mil_disp_neutral()
-        _log.debug("[DBG] publish_system env=%r (%s) disp=%r", environment, type(environment), disposition)
+        # OMIT environment; only send disposition to avoid enum parsing issues
+        mil_view = MilView(disposition="DISPOSITION_NEUTRAL")
 
-        mil_view = MilView(environment=environment, disposition=disposition)
         provenance = Provenance(
             data_type="telemetry",
             integration_name=self.source_name,
-            source_update_time=_now_utc(),
+            source_update_time=_now_utc().isoformat(),
         )
         aliases = Aliases(display_name=display)
         expiry_time = _now_utc() + dt.timedelta(minutes=10)
@@ -273,38 +244,50 @@ class LatticeSink:
         except Exception as e:
             _log.warning("Lattice publish_system failed for %s: %s", entity_id, e)
 
-    # ------------------------------- Drone (air track) -------------------------------
-
+    # ───────────────────────────────── Drone (air track) ───────────────────────────
     def publish_drone(self, d: Any) -> None:
-        """Publish/refresh a drone entity from a Drone object/dict."""
+        """
+        Publish/refresh a drone entity. We DO set environment to AIR here
+        (this value shape is known-good with your SDK/examples).
+        """
         if not self._rate_ok("drone"):
             return
 
-        # Support both dict and object access
-        def g(k, default=None):
+        # Supports dict or object attr access
+        def g(key, default=None):
             if isinstance(d, dict):
-                return d.get(k, default)
-            return getattr(d, k, default)
+                return d.get(key, default)
+            return getattr(d, key, default)
 
         entity_id = str(g("id", "unknown")) or "unknown"
-        lat = g("lat"); lon = g("lon"); hae = g("alt")
+        lat = g("lat")
+        lon = g("lon")
+        hae = g("alt")
         if not _valid_latlon(lat, lon):
             return
 
-        location = _new_location(float(lat), float(lon), hae)
+        # Location
+        location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
+        try:
+            if hae is not None:
+                location.position.height_above_ellipsoid_meters = float(hae)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
         display = entity_id
         aliases = Aliases(display_name=display)
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Small UAS")
 
-        environment = _mil_env_air()
-        disposition = _mil_disp_neutral()
-        _log.debug("[DBG] publish_drone env=%r (%s) disp=%r", environment, type(environment), disposition)
+        # Keep environment=AIR (works in other examples)
+        mil_view = MilView(
+            environment=_air_env_value(),
+            disposition="DISPOSITION_NEUTRAL",
+        )
 
-        mil_view = MilView(environment=environment, disposition=disposition)
         provenance = Provenance(
             data_type="drone-telemetry",
             integration_name=self.source_name,
-            source_update_time=_now_utc(),
+            source_update_time=_now_utc().isoformat(),
         )
         expiry_time = _now_utc() + dt.timedelta(minutes=5)
 
@@ -326,8 +309,7 @@ class LatticeSink:
         except Exception as e:
             _log.warning("Lattice publish_drone failed for %s: %s", entity_id, e)
 
-    # ---------------------------- Pilot & Home (ground) ----------------------------
-
+    # ───────────────────────────── Pilot & Home (ground) ───────────────────────────
     def publish_pilot(self, entity_base_id: str, lat: float, lon: float) -> None:
         if not self._rate_ok("pilot"):
             return
@@ -335,18 +317,16 @@ class LatticeSink:
             return
 
         entity_id = f"{entity_base_id}-pilot"
-        location = _new_location(float(lat), float(lon), None)
+        location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Operator")
 
-        environment = _mil_env_ground()
-        disposition = _mil_disp_friend()
-        _log.debug("[DBG] publish_pilot env=%r (%s) disp=%r", environment, type(environment), disposition)
+        # OMIT environment; rely on server defaults
+        mil_view = MilView(disposition="DISPOSITION_FRIEND")
 
-        mil_view = MilView(environment=environment, disposition=disposition)
         provenance = Provenance(
             data_type="pilot-position",
             integration_name=self.source_name,
-            source_update_time=_now_utc(),
+            source_update_time=_now_utc().isoformat(),
         )
         expiry_time = _now_utc() + dt.timedelta(minutes=30)
 
@@ -375,18 +355,16 @@ class LatticeSink:
             return
 
         entity_id = f"{entity_base_id}-home"
-        location = _new_location(float(lat), float(lon), None)
+        location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Home Point")
 
-        environment = _mil_env_ground()
-        disposition = _mil_disp_friend()
-        _log.debug("[DBG] publish_home env=%r (%s) disp=%r", environment, type(environment), disposition)
+        # OMIT environment; rely on server defaults
+        mil_view = MilView(disposition="DISPOSITION_FRIEND")
 
-        mil_view = MilView(environment=environment, disposition=disposition)
         provenance = Provenance(
             data_type="home-position",
             integration_name=self.source_name,
-            source_update_time=_now_utc(),
+            source_update_time=_now_utc().isoformat(),
         )
         expiry_time = _now_utc() + dt.timedelta(hours=4)
 
