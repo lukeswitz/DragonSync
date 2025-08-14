@@ -39,13 +39,27 @@ import configparser  # Added for gps.ini support
 
 STATIC_GPS = {'lat': None, 'lon': None, 'alt': None}
 
+# --- HOT-RELOAD gps.ini ---
+GPS_INI_PATH = None
+GPS_INI_MTIME = None
+# --------------------------
+
+# --- small helper to centralize gps.ini lookup (used by loader & hot-reload) ---
+def _locate_gps_ini():
+    """Return the first existing gps.ini path to use, or None."""
+    # Prefer /etc/gps.ini, else alongside this script
+    candidates = ['/etc/gps.ini', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gps.ini')]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+# -------------------------------------------------------------------------------
+
 def load_gps_ini():
     """Read static GPS settings from gps.ini if present and enabled."""
-    gps_ini = '/etc/gps.ini'
-    if not os.path.isfile(gps_ini):
-        gps_ini = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gps.ini')
-        if not os.path.isfile(gps_ini):
-            return None
+    gps_ini = _locate_gps_ini()
+    if not gps_ini:
+        return None
     config = configparser.ConfigParser()
     config.read(gps_ini)
     section = 'gps'
@@ -321,8 +335,10 @@ def main(host, port, interval, debug, static_lat=None, static_lon=None, static_a
 
     # Determine static GPS settings
     # Priority: CLI flags > gps.ini > none
-    global STATIC_GPS
-    if static_lat is not None and static_lon is not None:
+    global STATIC_GPS, GPS_INI_PATH, GPS_INI_MTIME  # --- HOT-RELOAD gps.ini ---
+    cli_overrides = static_lat is not None and static_lon is not None
+
+    if cli_overrides:
         STATIC_GPS['lat'] = static_lat
         STATIC_GPS['lon'] = static_lon
         STATIC_GPS['alt'] = static_alt
@@ -333,10 +349,58 @@ def main(host, port, interval, debug, static_lat=None, static_lon=None, static_a
             STATIC_GPS['lon'] = ini_vals['lon']
             STATIC_GPS['alt'] = ini_vals['alt']
 
+    # --- HOT-RELOAD gps.ini ---
+    GPS_INI_PATH = _locate_gps_ini()
+    if GPS_INI_PATH:
+        try:
+            GPS_INI_MTIME = os.path.getmtime(GPS_INI_PATH)
+            if debug:
+                print(f"[gps.ini] Watching: {GPS_INI_PATH} (mtime {GPS_INI_MTIME})")
+        except Exception:
+            GPS_INI_MTIME = None
+    # ---------------------------
+
     socket = create_zmq_context(host, port) if not debug else None
 
     while True:
         try:
+            # --- HOT-RELOAD gps.ini ---
+            # Only when not overridden by CLI
+            if not cli_overrides:
+                # If path disappeared/reappeared, re-resolve
+                if GPS_INI_PATH is None or not os.path.isfile(GPS_INI_PATH):
+                    new_path = _locate_gps_ini()
+                    if new_path != GPS_INI_PATH:
+                        GPS_INI_PATH = new_path
+                        GPS_INI_MTIME = os.path.getmtime(GPS_INI_PATH) if GPS_INI_PATH else None
+                        if debug:
+                            print(f"[gps.ini] Path changed: {GPS_INI_PATH}")
+
+                if GPS_INI_PATH:
+                    try:
+                        current_mtime = os.path.getmtime(GPS_INI_PATH)
+                        if GPS_INI_MTIME is None or current_mtime > GPS_INI_MTIME:
+                            # File updated — re-read
+                            new_vals = load_gps_ini()
+                            if new_vals:
+                                STATIC_GPS['lat'] = new_vals['lat']
+                                STATIC_GPS['lon'] = new_vals['lon']
+                                STATIC_GPS['alt'] = new_vals['alt']
+                                if debug:
+                                    print(f"[gps.ini] Reloaded static GPS: {STATIC_GPS}")
+                            else:
+                                # use_static_gps disabled or invalid file -> clear static
+                                STATIC_GPS['lat'] = None
+                                STATIC_GPS['lon'] = None
+                                STATIC_GPS['alt'] = None
+                                if debug:
+                                    print(f"[gps.ini] Reloaded: static GPS disabled/invalid; using live GPS")
+                            GPS_INI_MTIME = current_mtime
+                    except Exception as e:
+                        if debug:
+                            print(f"[gps.ini] Reload check error: {e}")
+            # ------------------------------------------------------
+
             data = {
                 'timestamp': time.time(),
                 'gps_data': get_gps_data(debug=debug),
