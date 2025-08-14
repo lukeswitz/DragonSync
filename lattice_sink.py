@@ -22,24 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import logging
-import time
+import logging, time, json
 import datetime as dt
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 # ---------- SDK imports (best-effort) ----------
 try:
     import anduril
     from anduril import (
-        Lattice,
-        Location,
-        Position,
-        MilView,
-        Ontology,
-        Provenance,
-        Aliases,
-        Classification,
-        ClassificationInformation,
+        Lattice, Location, Position, MilView, Ontology, Provenance, Aliases,
+        Classification, ClassificationInformation,
     )
 except Exception as e:
     Lattice = Location = Position = MilView = Ontology = Provenance = Aliases = None  # type: ignore
@@ -54,7 +46,6 @@ try:
 except Exception:
     RequestOptions = None  # type: ignore
 
-# ---------- HTTP fallback ----------
 import httpx
 
 _log = logging.getLogger(__name__)
@@ -77,8 +68,7 @@ def _valid_latlon(lat: Optional[float], lon: Optional[float]) -> bool:
 
 class LatticeSink:
     """
-    Publishes entities to Lattice via the Anduril SDK with an HTTP fallback.
-    Supports environment token + optional sandboxes token.
+    Publishes entities to Lattice via the Anduril SDK with a robust HTTP fallback.
     """
 
     def __init__(
@@ -99,7 +89,6 @@ class LatticeSink:
         self._sandbox_token = (sandbox_token or "").strip() or None
         self.source_name = source_name
 
-        # SDK client
         headers = {"anduril-sandbox-authorization": f"Bearer {self._sandbox_token}"} if self._sandbox_token else None
         self._req_opts = None
         try:
@@ -119,7 +108,6 @@ class LatticeSink:
                 )
             _log.info("Lattice client constructed; per-request headers=%s", bool(self._req_opts))
 
-        # Rate limiting
         self._periods = {
             "drone": 1.0 / max(drone_hz, 1e-6),
             "wd": 1.0 / max(wardragon_hz, 1e-6),
@@ -145,25 +133,21 @@ class LatticeSink:
             h["anduril-sandbox-authorization"] = f"Bearer {self._sandbox_token}"
         return h
 
-    def _http_put_entity(self, payload: Dict[str, Any]) -> None:
-        url = f"{self._base_url}/api/v1/entities"
-        try:
-            r = httpx.put(url, json=payload, headers=self._http_headers(), timeout=60)
-            if r.status_code >= 400:
-                _log.warning("HTTP fallback failed: %s %s", r.status_code, r.text)
-            else:
-                _log.info("HTTP fallback publish OK (%s)", r.status_code)
-        except Exception as e:
-            _log.warning("HTTP fallback exception: %s", e)
-
-    # Build minimal JSON payloads in Protobuf JSON casing
-    def _common_json(self, entity_id: str, display: str, ontology_template: str, platform_type: str,
-                     env_const: str, disposition_const: str,
-                     lat: float, lon: float, hae: Optional[float], ttl_minutes: int) -> Dict[str, Any]:
-        pos = {
-            "latitudeDegrees": float(lat),
-            "longitudeDegrees": float(lon),
-        }
+    def _common_json(
+        self,
+        *,
+        entity_id: str,
+        display: str,
+        ontology_template: str,
+        platform_type: str,
+        lat: float,
+        lon: float,
+        hae: Optional[float],
+        env_value: Any,
+        disposition_value: Any,
+        ttl_minutes: int,
+    ) -> Dict[str, Any]:
+        pos = {"latitudeDegrees": float(lat), "longitudeDegrees": float(lon)}
         if hae is not None:
             pos["heightAboveEllipsoidMeters"] = float(hae)
 
@@ -172,7 +156,7 @@ class LatticeSink:
             "isLive": True,
             "location": {"position": pos},
             "ontology": {"template": ontology_template, "platformType": platform_type},
-            "milView": {"environment": env_const, "disposition": disposition_const},
+            "milView": {"environment": env_value, "disposition": disposition_value},
             "provenance": {
                 "dataType": "telemetry",
                 "integrationName": self.source_name,
@@ -183,11 +167,63 @@ class LatticeSink:
             "dataClassification": {"default": {"level": "CLASSIFICATION_LEVELS_UNCLASSIFIED"}},
         }
 
+    def _http_put_entity(self, payload: Dict[str, Any]) -> Tuple[int, str]:
+        url = f"{self._base_url}/api/v1/entities"
+        # log compact payload to see exactly what we send
+        _log.error("HTTP payload -> %s", json.dumps(payload, separators=(",", ":")))
+        r = httpx.put(url, json=payload, headers=self._http_headers(), timeout=60)
+        return r.status_code, r.text
+
+    def _http_try_env_variants(
+        self,
+        *,
+        entity_id: str,
+        display: str,
+        ontology_template: str,
+        platform_type: str,
+        lat: float,
+        lon: float,
+        hae: Optional[float],
+        ttl_minutes: int,
+        ground: bool,
+    ) -> None:
+        # Order of attempts for milView.environment
+        preferred = "ENVIRONMENT_GROUND" if ground else "ENVIRONMENT_AIR"
+        variants: Tuple[str, Any] = (
+            ("ENUM_CANON", preferred),
+            ("BARE", preferred.replace("ENVIRONMENT_", "")),             # "GROUND"/"AIR"
+            ("NO_UNDERSCORE", preferred.replace("_", "")),               # "ENVIRONMENTGROUND"
+            ("ENUM_NUM_1", 1),
+            ("ENUM_NUM_2", 2),
+        )
+        for label, env_val in variants:
+            payload = self._common_json(
+                entity_id=entity_id,
+                display=display,
+                ontology_template=ontology_template,
+                platform_type=platform_type,
+                lat=lat,
+                lon=lon,
+                hae=hae,
+                env_value=env_val,
+                disposition_value="DISPOSITION_NEUTRAL" if ground else "DISPOSITION_NEUTRAL",
+                ttl_minutes=ttl_minutes,
+            )
+            try:
+                code, text = self._http_put_entity(payload)
+                if 200 <= code < 300:
+                    _log.info("HTTP fallback publish OK via %s (status=%s)", label, code)
+                    return
+                _log.warning("HTTP %s failed: %s %s", label, code, text)
+            except Exception as e:
+                _log.warning("HTTP %s exception: %s", label, e)
+
+        _log.error("All HTTP environment variants failed for %s.", entity_id)
+
     # ----------------- publishers -----------------
     def publish_system(self, s: Dict[str, Any]) -> None:
         if not self._rate_ok("wd"):
             return
-
         serial = str(s.get("serial_number", "unknown")) or "unknown"
         gps = s.get("gps_data", {}) or {}
         lat, lon, hae = gps.get("latitude"), gps.get("longitude"), gps.get("altitude")
@@ -197,7 +233,7 @@ class LatticeSink:
         entity_id = f"wardragon-{serial}"
         display = f"WarDragon {serial}"
 
-        # SDK path first
+        # SDK first
         try:
             loc = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
             try:
@@ -205,14 +241,13 @@ class LatticeSink:
                     loc.position.height_above_ellipsoid_meters = float(hae)  # type: ignore
             except Exception:
                 pass
-
-            mil_view = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_NEUTRAL")
+            mv = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_NEUTRAL")
             self.client.entities.publish_entity(
                 entity_id=entity_id,
                 is_live=True,
                 location=loc,
                 ontology=Ontology(template="TEMPLATE_TRACK", platform_type="Ground Sensor"),
-                mil_view=mil_view,
+                mil_view=mv,
                 provenance=Provenance(
                     data_type="wardragon-status",
                     integration_name=self.source_name,
@@ -225,26 +260,25 @@ class LatticeSink:
                 ),
                 request_options=self._req_opts,
             )
+            return
         except Exception as e:
             _log.warning("SDK publish_system failed (%s). Falling back to HTTP.", e)
-            payload = self._common_json(
-                entity_id=entity_id,
-                display=display,
-                ontology_template="TEMPLATE_TRACK",
-                platform_type="Ground Sensor",
-                env_const="ENVIRONMENT_GROUND",
-                disposition_const="DISPOSITION_NEUTRAL",
-                lat=float(lat),
-                lon=float(lon),
-                hae=float(hae) if hae is not None else None,
-                ttl_minutes=10,
-            )
-            self._http_put_entity(payload)
+
+        self._http_try_env_variants(
+            entity_id=entity_id,
+            display=display,
+            ontology_template="TEMPLATE_TRACK",
+            platform_type="Ground Sensor",
+            lat=float(lat),
+            lon=float(lon),
+            hae=float(hae) if hae is not None else None,
+            ttl_minutes=10,
+            ground=True,
+        )
 
     def publish_drone(self, d: Any) -> None:
         if not self._rate_ok("drone"):
             return
-
         g = (lambda k, default=None: getattr(d, k, d.get(k, default)) if isinstance(d, dict) else getattr(d, k, default))
         entity_id = str(g("id", "unknown")) or "unknown"
         lat, lon, hae = g("lat"), g("lon"), g("alt")
@@ -253,6 +287,7 @@ class LatticeSink:
 
         display = entity_id
 
+        # SDK first
         try:
             loc = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
             try:
@@ -260,14 +295,13 @@ class LatticeSink:
                     loc.position.height_above_ellipsoid_meters = float(hae)  # type: ignore
             except Exception:
                 pass
-
-            mil_view = MilView(environment="ENVIRONMENT_AIR", disposition="DISPOSITION_NEUTRAL")
+            mv = MilView(environment="ENVIRONMENT_AIR", disposition="DISPOSITION_NEUTRAL")
             self.client.entities.publish_entity(
                 entity_id=entity_id,
                 is_live=True,
                 location=loc,
                 ontology=Ontology(template="TEMPLATE_TRACK", platform_type="Small UAS"),
-                mil_view=mil_view,
+                mil_view=mv,
                 provenance=Provenance(
                     data_type="drone-telemetry",
                     integration_name=self.source_name,
@@ -280,40 +314,39 @@ class LatticeSink:
                 ),
                 request_options=self._req_opts,
             )
+            return
         except Exception as e:
             _log.warning("SDK publish_drone failed (%s). Falling back to HTTP.", e)
-            payload = self._common_json(
-                entity_id=entity_id,
-                display=display,
-                ontology_template="TEMPLATE_TRACK",
-                platform_type="Small UAS",
-                env_const="ENVIRONMENT_AIR",
-                disposition_const="DISPOSITION_NEUTRAL",
-                lat=float(lat),
-                lon=float(lon),
-                hae=float(hae) if hae is not None else None,
-                ttl_minutes=5,
-            )
-            self._http_put_entity(payload)
+
+        self._http_try_env_variants(
+            entity_id=entity_id,
+            display=display,
+            ontology_template="TEMPLATE_TRACK",
+            platform_type="Small UAS",
+            lat=float(lat),
+            lon=float(lon),
+            hae=float(hae) if hae is not None else None,
+            ttl_minutes=5,
+            ground=False,
+        )
 
     def publish_pilot(self, entity_base_id: str, lat: float, lon: float) -> None:
         if not self._rate_ok("pilot"):
             return
         if not _valid_latlon(lat, lon):
             return
-
         entity_id = f"{entity_base_id}-pilot"
         display = f"Pilot of {entity_base_id}"
 
         try:
             loc = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
-            mil_view = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_FRIEND")
+            mv = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_FRIEND")
             self.client.entities.publish_entity(
                 entity_id=entity_id,
                 is_live=True,
                 location=loc,
                 ontology=Ontology(template="TEMPLATE_TRACK", platform_type="Operator"),
-                mil_view=mil_view,
+                mil_view=mv,
                 provenance=Provenance(
                     data_type="pilot-position",
                     integration_name=self.source_name,
@@ -326,40 +359,39 @@ class LatticeSink:
                 ),
                 request_options=self._req_opts,
             )
+            return
         except Exception as e:
             _log.warning("SDK publish_pilot failed (%s). Falling back to HTTP.", e)
-            payload = self._common_json(
-                entity_id=entity_id,
-                display=display,
-                ontology_template="TEMPLATE_TRACK",
-                platform_type="Operator",
-                env_const="ENVIRONMENT_GROUND",
-                disposition_const="DISPOSITION_FRIEND",
-                lat=float(lat),
-                lon=float(lon),
-                hae=None,
-                ttl_minutes=30,
-            )
-            self._http_put_entity(payload)
+
+        self._http_try_env_variants(
+            entity_id=entity_id,
+            display=display,
+            ontology_template="TEMPLATE_TRACK",
+            platform_type="Operator",
+            lat=float(lat),
+            lon=float(lon),
+            hae=None,
+            ttl_minutes=30,
+            ground=True,
+        )
 
     def publish_home(self, entity_base_id: str, lat: float, lon: float) -> None:
         if not self._rate_ok("home"):
             return
         if not _valid_latlon(lat, lon):
             return
-
         entity_id = f"{entity_base_id}-home"
         display = f"Home of {entity_base_id}"
 
         try:
             loc = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
-            mil_view = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_FRIEND")
+            mv = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_FRIEND")
             self.client.entities.publish_entity(
                 entity_id=entity_id,
                 is_live=True,
                 location=loc,
                 ontology=Ontology(template="TEMPLATE_TRACK", platform_type="Home Point"),
-                mil_view=mil_view,
+                mil_view=mv,
                 provenance=Provenance(
                     data_type="home-position",
                     integration_name=self.source_name,
@@ -372,18 +404,18 @@ class LatticeSink:
                 ),
                 request_options=self._req_opts,
             )
+            return
         except Exception as e:
             _log.warning("SDK publish_home failed (%s). Falling back to HTTP.", e)
-            payload = self._common_json(
-                entity_id=entity_id,
-                display=display,
-                ontology_template="TEMPLATE_TRACK",
-                platform_type="Home Point",
-                env_const="ENVIRONMENT_GROUND",
-                disposition_const="DISPOSITION_FRIEND",
-                lat=float(lat),
-                lon=float(lon),
-                hae=None,
-                ttl_minutes=240,
-            )
-            self._http_put_entity(payload)
+
+        self._http_try_env_variants(
+            entity_id=entity_id,
+            display=display,
+            ontology_template="TEMPLATE_TRACK",
+            platform_type="Home Point",
+            lat=float(lat),
+            lon=float(lon),
+            hae=None,
+            ttl_minutes=240,
+            ground=True,
+        )
