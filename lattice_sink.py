@@ -1,4 +1,4 @@
-""" 
+"""
 MIT License
 
 Copyright (c) 2024 cemaxecuter
@@ -40,6 +40,12 @@ try:
         Classification,
         ClassificationInformation,
     )
+    # Prefer the actual enum from the SDK if available
+    try:
+        from anduril.entities.types.mil_view import Environment as MilEnvironment  # type: ignore
+    except Exception:
+        MilEnvironment = None  # type: ignore
+
     # Optional: used if we need per-request headers
     try:
         from anduril.core.request_options import RequestOptions
@@ -51,6 +57,7 @@ except Exception as e:
     Location = Position = MilView = Ontology = Provenance = Aliases = None  # type: ignore
     Classification = ClassificationInformation = None  # type: ignore
     RequestOptions = None  # type: ignore
+    MilEnvironment = None  # type: ignore
     _IMPORT_ERROR = e
 else:
     _IMPORT_ERROR = None
@@ -70,6 +77,37 @@ def _valid_latlon(lat: Optional[float], lon: Optional[float]) -> bool:
         return -90.0 <= float(lat) <= 90.0 and -180.0 <= float(lon) <= 180.0
     except Exception:
         return False
+
+
+def _env(value: str):
+    """
+    Map loose strings like 'ground', 'AIR' to the proper Lattice enum when available,
+    otherwise return the exact string constant expected by the API as a safe fallback.
+    """
+    v = (value or "").strip().upper().replace("-", "_")
+    if MilEnvironment is not None:
+        if v in ("GROUND", "ENVIRONMENT_GROUND"):
+            return MilEnvironment.ENVIRONMENT_GROUND
+        if v in ("AIR", "ENVIRONMENT_AIR"):
+            return MilEnvironment.ENVIRONMENT_AIR
+        if v in ("SURFACE", "SEA", "ENVIRONMENT_SURFACE"):
+            return MilEnvironment.ENVIRONMENT_SURFACE
+        if v in ("SUBSURFACE", "UNDERSEA", "ENVIRONMENT_SUBSURFACE"):
+            return MilEnvironment.ENVIRONMENT_SUBSURFACE
+        if v in ("SPACE", "ENVIRONMENT_SPACE"):
+            return MilEnvironment.ENVIRONMENT_SPACE
+    # String fallback (exact wire values)
+    if v in ("GROUND", "ENVIRONMENT_GROUND"):
+        return "ENVIRONMENT_GROUND"
+    if v in ("AIR", "ENVIRONMENT_AIR"):
+        return "ENVIRONMENT_AIR"
+    if v in ("SURFACE", "SEA", "ENVIRONMENT_SURFACE"):
+        return "ENVIRONMENT_SURFACE"
+    if v in ("SUBSURFACE", "UNDERSEA", "ENVIRONMENT_SUBSURFACE"):
+        return "ENVIRONMENT_SUBSURFACE"
+    if v in ("SPACE", "ENVIRONMENT_SPACE"):
+        return "ENVIRONMENT_SPACE"
+    raise ValueError(f"Unknown environment value: {value!r}")
 
 
 class LatticeSink:
@@ -170,7 +208,8 @@ class LatticeSink:
             pass
 
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Ground Sensor")
-        mil_view = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_NEUTRAL")
+        # >>> enum-safe environment <<<
+        mil_view = MilView(environment=_env("GROUND"), disposition="DISPOSITION_NEUTRAL")
         provenance = Provenance(
             data_type="wardragon-status",
             integration_name=self.source_name,
@@ -223,7 +262,8 @@ class LatticeSink:
         display = entity_id
         aliases = Aliases(display_name=display)
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Small UAS")
-        mil_view = MilView(environment="ENVIRONMENT_AIR", disposition="DISPOSITION_NEUTRAL")
+        # >>> enum-safe environment <<<
+        mil_view = MilView(environment=_env("AIR"), disposition="DISPOSITION_NEUTRAL")
         provenance = Provenance(
             data_type="drone-telemetry",
             integration_name=self.source_name,
@@ -260,7 +300,8 @@ class LatticeSink:
         entity_id = f"{entity_base_id}-pilot"
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Operator")
-        mil_view = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_FRIEND")
+        # >>> enum-safe environment <<<
+        mil_view = MilView(environment=_env("GROUND"), disposition="DISPOSITION_FRIEND")
         provenance = Provenance(
             data_type="pilot-position",
             integration_name=self.source_name,
@@ -295,7 +336,8 @@ class LatticeSink:
         entity_id = f"{entity_base_id}-home"
         location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
         ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Home Point")
-        mil_view = MilView(environment="ENVIRONMENT_GROUND", disposition="DISPOSITION_FRIEND")
+        # >>> enum-safe environment <<<
+        mil_view = MilView(environment=_env("GROUND"), disposition="DISPOSITION_FRIEND")
         provenance = Provenance(
             data_type="home-position",
             integration_name=self.source_name,
