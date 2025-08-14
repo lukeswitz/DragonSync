@@ -95,8 +95,19 @@ class LatticeSink:
         drone_hz: float = 1.0,
         wardragon_hz: float = 0.2,
         source_name: str = "DragonSync",
+        sandbox_token: Optional[str] = None,
+        extra_headers: Optional[dict] = None,
     ):
-        self.client = Lattice(token=token, base_url=base_url) if base_url else Lattice(token=token)
+        headers = {}
+        if sandbox_token:
+            headers["anduril-sandbox-authorization"] = f"Bearer {sandbox_token}"
+        if extra_headers:
+            headers.update(extra_headers)
+        self.client = (
+            Lattice(token=token, base_url=base_url, headers=headers or None)
+            if base_url
+            else Lattice(token=token, headers=headers or None)
+        )
         self.source_name = source_name
         self._drone_period = 1.0 / max(drone_hz, 1e-3)
         self._wd_period = 1.0 / max(wardragon_hz, 1e-3)
