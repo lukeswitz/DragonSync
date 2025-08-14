@@ -32,93 +32,57 @@ import zmq
 import signal
 import sys
 import uuid
-import os
-import configparser  # gps.ini support
+import os  # Import os module
+from gps import gps, WATCH_ENABLE, WATCH_NEWSTYLE
 
-# --- gpsd import (optional) ---------------------------------------------------
-# Allow running without gpsd if using static GPS from gps.ini or CLI.
-try:
-    from gps import gps as gpsd_class, WATCH_ENABLE, WATCH_NEWSTYLE
-    GPSD_AVAILABLE = True
-except Exception:
-    gpsd_class = None
-    WATCH_ENABLE = 0
-    WATCH_NEWSTYLE = 0
-    GPSD_AVAILABLE = False
-# ------------------------------------------------------------------------------
+import configparser  # Added for gps.ini support
 
 STATIC_GPS = {'lat': None, 'lon': None, 'alt': None}
 
-def load_gps_ini(path: str | None = None, debug: bool = False):
-    """Read static GPS settings from a gps.ini if present and enabled.
+# --- HOT-RELOAD gps.ini ---
+GPS_INI_PATH = None
+GPS_INI_MTIME = None
+# --------------------------
 
-    Search order:
-      1) Explicit --gps-ini path (if provided)
-      2) /etc/gps.ini
-      3) ./gps.ini (next to this script)
+# --- small helper to centralize gps.ini lookup (used by loader & hot-reload) ---
+def _locate_gps_ini():
+    """Return the first existing gps.ini path to use, or None."""
+    # Prefer /etc/gps.ini, else alongside this script
+    candidates = ['/etc/gps.ini', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gps.ini')]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+# -------------------------------------------------------------------------------
 
-    Returns dict {'lat': float, 'lon': float, 'alt': float|None} or None.
-    """
-    candidates = []
-    if path:
-        candidates.append(path)
-    candidates.append('/etc/gps.ini')
-    candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gps.ini'))
-
-    gps_ini = next((p for p in candidates if os.path.isfile(p)), None)
+def load_gps_ini():
+    """Read static GPS settings from gps.ini if present and enabled."""
+    gps_ini = _locate_gps_ini()
     if not gps_ini:
-        if debug:
-            print("[gps.ini] No gps.ini file found in provided path, /etc, or script directory.")
         return None
-
-    if debug:
-        print(f"[gps.ini] Using file: {gps_ini}")
-
     config = configparser.ConfigParser()
-    try:
-        with open(gps_ini, 'r') as f:
-            config.read_file(f)
-    except Exception as e:
-        if debug:
-            print(f"[gps.ini] Failed to read {gps_ini}: {e}")
-        return None
-
+    config.read(gps_ini)
     section = 'gps'
     if section not in config:
-        if debug:
-            print(f"[gps.ini] Missing section [{section}] in {gps_ini}")
         return None
-
     try:
-        use_static = config.get(section, 'use_static_gps', fallback='false').strip().lower() == 'true'
-        if not use_static:
-            if debug:
-                print("[gps.ini] use_static_gps is not true; ignoring static GPS.")
-            return None
-
-        lat = config.getfloat(section, 'static_lat', fallback=None)
-        lon = config.getfloat(section, 'static_lon', fallback=None)
-        alt = config.getfloat(section, 'static_alt', fallback=None)
-
-        if lat is None or lon is None:
-            if debug:
-                print("[gps.ini] static_lat/static_lon missing; cannot use static GPS.")
-            return None
-
-        if debug:
-            print(f"[gps.ini] Loaded static GPS: lat={lat}, lon={lon}, alt={alt}")
-        return {'lat': lat, 'lon': lon, 'alt': alt}
-    except Exception as e:
-        if debug:
-            print(f"[gps.ini] Error parsing values: {e}")
+        if config.get(section, 'use_static_gps').strip().lower() == 'true':
+            lat = config.getfloat(section, 'static_lat')
+            lon = config.getfloat(section, 'static_lon')
+            try:
+                alt = config.getfloat(section, 'static_alt')
+            except Exception:
+                alt = None
+            return {'lat': lat, 'lon': lon, 'alt': alt}
+    except Exception:
         return None
-
+    return None
 
 def get_gps_data(debug=False):
     """Retrieve GPS data from gpsd or use static values if provided."""
     if STATIC_GPS['lat'] is not None and STATIC_GPS['lon'] is not None:
         if debug:
-            print(f"[gps] Using static GPS: {STATIC_GPS}")
+            print(f"Using static GPS: {STATIC_GPS}")
         return {
             'latitude': STATIC_GPS['lat'],
             'longitude': STATIC_GPS['lon'],
@@ -126,20 +90,14 @@ def get_gps_data(debug=False):
             'speed': 'N/A',
             'track': 'N/A'
         }
-
-    if not GPSD_AVAILABLE:
-        if debug:
-            print("[gps] gpsd module not available and no static GPS set.")
-        return {'latitude': 'N/A', 'longitude': 'N/A', 'altitude': 'N/A', 'speed': 'N/A', 'track': 'N/A'}
-
     try:
-        gpsd = gpsd_class(mode=WATCH_ENABLE | WATCH_NEWSTYLE)
+        gpsd = gps(mode=WATCH_ENABLE | WATCH_NEWSTYLE)
 
         if debug:
-            print("[gps] Waiting for GPS data...")
+            print("Waiting for GPS data...")
 
         report = gpsd.next()
-        while report.get('class') != 'TPV':
+        while report['class'] != 'TPV':
             report = gpsd.next()
 
         gps_info = {
@@ -150,18 +108,18 @@ def get_gps_data(debug=False):
             'track': getattr(report, 'track', 'N/A')
         }
         if debug:
-            print(f"[gps] Received GPS data: {gps_info}")
+            print(f"Received GPS data: {gps_info}")
         return gps_info
 
     except KeyError as e:
         if debug:
-            print(f"[gps] Missing GPS data key: {e}")
+            print(f"Missing GPS data key: {e}")
     except StopIteration:
         if debug:
-            print("[gps] No GPS data available.")
+            print("No GPS data available.")
     except Exception as e:
         if debug:
-            print(f"[gps] Error connecting to gpsd: {e}")
+            print(f"Error connecting to gpsd: {e}")
 
     return {'latitude': 'N/A', 'longitude': 'N/A', 'altitude': 'N/A', 'speed': 'N/A', 'track': 'N/A'}
 
@@ -186,28 +144,27 @@ def get_serial_number(debug=False):
 
         if serial_number and serial_number not in invalid_serials:
             if debug:
-                print(f"[uid] Using serial number: {serial_number}")
+                print(f"Using serial number: {serial_number}")
             return serial_number
 
     except subprocess.CalledProcessError as e:
         if debug:
-            print(f"[uid] Error retrieving serial number: {e}")
+            print(f"Error retrieving serial number: {e}")
     except Exception as e:
         if debug:
-            print(f"[uid] Unexpected error retrieving serial number: {e}")
+            print(f"Unexpected error retrieving serial number: {e}")
 
     # If serial number is invalid or not found, try to get MAC address
     try:
         mac_address = None
         for interface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
-                # psutil.AF_LINK on BSD/Darwin, socket.AF_PACKET on Linux; this keeps your original behavior
-                if getattr(psutil, "AF_LINK", None) and addr.family == psutil.AF_LINK:
+                if addr.family == psutil.AF_LINK:
                     if interface.startswith(('eth', 'en', 'wlan')):
                         mac_address = addr.address.replace(':', '').lower()
                         if mac_address and mac_address != '000000000000':
                             if debug:
-                                print(f"[uid] Using MAC from {interface} as UID: {mac_address}")
+                                print(f"Using MAC address from interface {interface} as UID: {mac_address}")
                             return mac_address
         # If no MAC address found, generate UUID and store it
         uid_file = '/var/tmp/system_uid.txt'
@@ -215,32 +172,32 @@ def get_serial_number(debug=False):
             with open(uid_file, 'r') as f:
                 saved_uuid = f.read().strip()
                 if debug:
-                    print(f"[uid] Using saved UUID: {saved_uuid}")
+                    print(f"Using saved UUID: {saved_uuid}")
                 return saved_uuid
         else:
             generated_uuid = str(uuid.uuid4())
             with open(uid_file, 'w') as f:
                 f.write(generated_uuid)
             if debug:
-                print(f"[uid] No serial or MAC. Generated & saved UUID: {generated_uuid}")
+                print(f"No serial number or MAC address found. Generated and saved UUID: {generated_uuid}")
             return generated_uuid
     except Exception as e:
         if debug:
-            print(f"[uid] Error retrieving MAC address: {e}")
+            print(f"Error retrieving MAC address: {e}")
         # Generate UUID and store it
         uid_file = '/var/tmp/system_uid.txt'
         if os.path.exists(uid_file):
             with open(uid_file, 'r') as f:
                 saved_uuid = f.read().strip()
                 if debug:
-                    print(f"[uid] Using saved UUID: {saved_uuid}")
+                    print(f"Using saved UUID: {saved_uuid}")
                 return saved_uuid
         else:
             generated_uuid = str(uuid.uuid4())
             with open(uid_file, 'w') as f:
                 f.write(generated_uuid)
             if debug:
-                print(f"[uid] Generated and saved UUID: {generated_uuid}")
+                print(f"Generated and saved UUID: {generated_uuid}")
             return generated_uuid
 
 
@@ -254,7 +211,7 @@ def get_cpu_temperature(debug=False):
                 return float(temp_str)
     except Exception as e:
         if debug:
-            print(f"[temp] Error retrieving CPU temperature: {e}")
+            print(f"Error retrieving CPU temperature: {e}")
     return 'N/A'
 
 
@@ -270,7 +227,7 @@ def get_system_stats():
 
 
 # ------------------------------------------------------------------------
-# Retrieve AntSDR (Pluto) temperatures using iio_attr (optional)
+# NEW FUNCTION: Retrieve AntSDR (Pluto) temperatures using iio_attr commands
 # Inspired by and code used from https://github.com/analogdevicesinc/plutosdr_scripts/blob/master/pluto_temp.sh
 # ------------------------------------------------------------------------
 def get_pluto_temperatures(debug=False):
@@ -278,27 +235,35 @@ def get_pluto_temperatures(debug=False):
     Attempt to gather the Pluto (RF chip) and Zynq chip temperatures
     using iio_attr (and iio_info) commands.
 
-    Returns:
-      { "pluto_temp": <float|'N/A'>, "zynq_temp": <float|'N/A'> }
+    Returns a dict like:
+      {
+          "pluto_temp": 48.7,  # in °C
+          "zynq_temp":  45.2   # in °C
+      }
+    or 'N/A' values if not available.
     """
     temps = {
         'pluto_temp': 'N/A',
         'zynq_temp': 'N/A'
     }
 
+    # Helper: check if a command exists
     def tool_exists(tool):
         return subprocess.run(['which', tool], capture_output=True).returncode == 0
 
+    # Ensure iio_info & iio_attr exist on PATH
     if not (tool_exists('iio_info') and tool_exists('iio_attr')):
         if debug:
-            print("[pluto] iio_info or iio_attr not found. Can't retrieve Pluto temps.")
+            print("iio_info or iio_attr not found. Can't retrieve Pluto temps.")
         return temps
 
     try:
+        # Try automatically finding a URI from iio_info -s
         uri = None
         result = subprocess.run(['iio_info', '-s'], capture_output=True, text=True, check=True)
         for line in result.stdout.strip().splitlines():
             if 'PLUTO' in line.upper():
+                # Typically something like: "[usb:3.17.5] (PlutoSDR (ADALM-PLUTO))"
                 parts = line.split()
                 for p in parts:
                     if p.startswith('[') and p.endswith(']'):
@@ -306,16 +271,19 @@ def get_pluto_temperatures(debug=False):
                         break
                 break
 
+        # Fallback if nothing found
         if not uri:
             uri = "ip:192.168.2.1"
             if debug:
-                print("[pluto] No USB device found, falling back to ip:192.168.2.1")
+                print("No USB device found, falling back to ip:192.168.2.1")
 
+        # Pluto (ad9361) temperature -> iio_attr -u <uri> -c ad9361-phy temp0 input
         cmd_pluto = ['iio_attr', '-u', uri, '-c', 'ad9361-phy', 'temp0', 'input']
         pluto_raw_out = subprocess.run(cmd_pluto, capture_output=True, text=True, check=True)
-        pluto_raw_str = pluto_raw_out.stdout.strip().split()[-1]
+        pluto_raw_str = pluto_raw_out.stdout.strip().split()[-1]  # last token
         pluto_temp_c = float(pluto_raw_str) / 1000.0
 
+        # Zynq (xadc) temperature -> raw + offset + scale
         cmd_xadc_raw    = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'raw']
         cmd_xadc_offset = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'offset']
         cmd_xadc_scale  = ['iio_attr', '-u', uri, '-c', 'xadc', 'temp0', 'scale']
@@ -330,14 +298,14 @@ def get_pluto_temperatures(debug=False):
         temps['zynq_temp']  = round(zynq_temp_c, 1)
 
         if debug:
-            print(f"[pluto] Temps -> Pluto: {temps['pluto_temp']} °C, Zynq: {temps['zynq_temp']} °C")
+            print(f"AntSDR/Pluto Temps -> Pluto: {temps['pluto_temp']} °C, Zynq: {temps['zynq_temp']} °C")
 
     except subprocess.CalledProcessError as e:
         if debug:
-            print(f"[pluto] iio_* returned non-zero exit code: {e}")
+            print(f"Error: iio commands returned non-zero exit code: {e}")
     except Exception as e:
         if debug:
-            print(f"[pluto] Unexpected error: {e}")
+            print(f"Unexpected error reading Pluto/Zynq temps: {e}")
 
     return temps
 
@@ -345,13 +313,13 @@ def get_pluto_temperatures(debug=False):
 def create_zmq_context(host, port):
     """Create and bind a ZMQ PUB socket."""
     context = zmq.Context()
-    sock = context.socket(zmq.PUB)
+    socket = context.socket(zmq.PUB)
     try:
-        sock.bind(f"tcp://{host}:{port}")
+        socket.bind(f"tcp://{host}:{port}")
     except zmq.ZMQError as e:
         print(f"Error binding ZMQ socket: {e}")
-        sys.exit(1)
-    return sock
+        sys.exit(1)  # Exit if socket binding fails
+    return socket
 
 
 def signal_handler(sig, frame):
@@ -360,39 +328,88 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-def main(host, port, interval, debug, static_lat=None, static_lon=None, static_alt=None, gps_ini_path: str | None = None):
+def main(host, port, interval, debug, static_lat=None, static_lon=None, static_alt=None):
     """Main function to gather data and send it over ZMQ."""
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
     # Determine static GPS settings
     # Priority: CLI flags > gps.ini > none
-    global STATIC_GPS
-    if static_lat is not None and static_lon is not None:
+    global STATIC_GPS, GPS_INI_PATH, GPS_INI_MTIME  # --- HOT-RELOAD gps.ini ---
+    cli_overrides = static_lat is not None and static_lon is not None
+
+    if cli_overrides:
         STATIC_GPS['lat'] = static_lat
         STATIC_GPS['lon'] = static_lon
         STATIC_GPS['alt'] = static_alt
-        if debug:
-            print(f"[gps] Static coords from CLI: {STATIC_GPS}")
     else:
-        ini_vals = load_gps_ini(gps_ini_path, debug=debug)
+        ini_vals = load_gps_ini()
         if ini_vals and ini_vals['lat'] is not None and ini_vals['lon'] is not None:
             STATIC_GPS['lat'] = ini_vals['lat']
             STATIC_GPS['lon'] = ini_vals['lon']
-            STATIC_GPS['alt'] = ini_vals.get('alt')
-        elif debug:
-            print("[gps] No static GPS from CLI or gps.ini; falling back to gpsd/NMEA if available.")
+            STATIC_GPS['alt'] = ini_vals['alt']
 
-    sock = create_zmq_context(host, port) if not debug else None
+    # --- HOT-RELOAD gps.ini ---
+    GPS_INI_PATH = _locate_gps_ini()
+    if GPS_INI_PATH:
+        try:
+            GPS_INI_MTIME = os.path.getmtime(GPS_INI_PATH)
+            if debug:
+                print(f"[gps.ini] Watching: {GPS_INI_PATH} (mtime {GPS_INI_MTIME})")
+        except Exception:
+            GPS_INI_MTIME = None
+    # ---------------------------
+
+    socket = create_zmq_context(host, port) if not debug else None
 
     while True:
         try:
+            # --- HOT-RELOAD gps.ini ---
+            # Only when not overridden by CLI
+            if not cli_overrides:
+                # If path disappeared/reappeared, re-resolve
+                if GPS_INI_PATH is None or not os.path.isfile(GPS_INI_PATH):
+                    new_path = _locate_gps_ini()
+                    if new_path != GPS_INI_PATH:
+                        GPS_INI_PATH = new_path
+                        GPS_INI_MTIME = os.path.getmtime(GPS_INI_PATH) if GPS_INI_PATH else None
+                        if debug:
+                            print(f"[gps.ini] Path changed: {GPS_INI_PATH}")
+
+                if GPS_INI_PATH:
+                    try:
+                        current_mtime = os.path.getmtime(GPS_INI_PATH)
+                        if GPS_INI_MTIME is None or current_mtime > GPS_INI_MTIME:
+                            # File updated — re-read
+                            new_vals = load_gps_ini()
+                            if new_vals:
+                                STATIC_GPS['lat'] = new_vals['lat']
+                                STATIC_GPS['lon'] = new_vals['lon']
+                                STATIC_GPS['alt'] = new_vals['alt']
+                                if debug:
+                                    print(f"[gps.ini] Reloaded static GPS: {STATIC_GPS}")
+                            else:
+                                # use_static_gps disabled or invalid file -> clear static
+                                STATIC_GPS['lat'] = None
+                                STATIC_GPS['lon'] = None
+                                STATIC_GPS['alt'] = None
+                                if debug:
+                                    print(f"[gps.ini] Reloaded: static GPS disabled/invalid; using live GPS")
+                            GPS_INI_MTIME = current_mtime
+                    except Exception as e:
+                        if debug:
+                            print(f"[gps.ini] Reload check error: {e}")
+            # ------------------------------------------------------
+
             data = {
                 'timestamp': time.time(),
                 'gps_data': get_gps_data(debug=debug),
                 'serial_number': get_serial_number(debug=debug),
                 'system_stats': get_system_stats(),
+                # --------------------------------------------
+                # Add the new temperature data to the payload
                 'ant_sdr_temps': get_pluto_temperatures(debug=debug)
+                # --------------------------------------------
             }
             json_data = json.dumps(data, indent=4)
 
@@ -400,7 +417,7 @@ def main(host, port, interval, debug, static_lat=None, static_lon=None, static_a
                 print(f"Debug Output:\n{json_data}")
             else:
                 # Publish over ZMQ
-                sock.send_string(json_data)
+                socket.send_string(json_data)
 
             time.sleep(interval)
 
@@ -424,7 +441,6 @@ if __name__ == "__main__":
     parser.add_argument('--static-lat', type=float, help='Static latitude for fixed position (overrides GPS)')
     parser.add_argument('--static-lon', type=float, help='Static longitude for fixed position (overrides GPS)')
     parser.add_argument('--static-alt', type=float, help='Static altitude for fixed position (optional)')
-    parser.add_argument('--gps-ini', type=str, help='Path to gps.ini (optional). If omitted, searches /etc and script dir.')
 
     args = parser.parse_args()
     main(
@@ -434,6 +450,5 @@ if __name__ == "__main__":
         args.debug,
         static_lat=args.static_lat,
         static_lon=args.static_lon,
-        static_alt=args.static_alt,
-        gps_ini_path=args.gps_ini
+        static_alt=args.static_alt
     )
