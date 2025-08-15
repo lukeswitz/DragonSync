@@ -312,17 +312,45 @@ class LatticeSink:
             _log.warning("Lattice publish_drone failed for %s: %s", entity_id, e)
 
     # ───────────────────────────── Pilot & Home (ground) ───────────────────────────
-    def publish_pilot(self, entity_base_id: str, lat: float, lon: float) -> None:
+    def publish_pilot(self, entity_base_id: str, lat: float, lon: float, extra=None, **kwargs) -> None:
+        """
+        Publish/refresh the pilot entity.
+
+        Back-compat: optional 4th positional arg:
+          - str   -> display name (aliases.name)
+          - number -> altitude HAE (meters)
+
+        Also supports keywords:
+          name= / display_name=  -> display name
+          altitude= / hae=       -> altitude HAE (meters)
+        """
         if not self._rate_ok("pilot"):
             return
         if not _valid_latlon(lat, lon):
             return
 
-        entity_id = f"{entity_base_id}-pilot"
-        alias_name = f"Pilot of {entity_base_id}"
-        location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
-        ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Operator")
+        # Defaults
+        alias_name = kwargs.get("display_name") or kwargs.get("name") or f"Pilot of {entity_base_id}"
+        hae = kwargs.get("altitude", kwargs.get("hae"))
 
+        # Interpret optional 4th positional
+        if isinstance(extra, str):
+            alias_name = extra
+        elif extra is not None and hae is None:
+            try:
+                hae = float(extra)
+            except Exception:
+                pass
+
+        entity_id = f"{entity_base_id}-pilot"
+        location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
+        try:
+            if hae is not None:
+                location.position.height_above_ellipsoid_meters = float(hae)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Operator")
         # OMIT environment; rely on server defaults
         mil_view = MilView(disposition="DISPOSITION_FRIEND")
 
@@ -341,7 +369,7 @@ class LatticeSink:
                 ontology=ontology,
                 mil_view=mil_view,
                 provenance=provenance,
-                aliases=Aliases(name=alias_name),
+                aliases=Aliases(name=str(alias_name)),
                 expiry_time=expiry_time,
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
@@ -351,17 +379,43 @@ class LatticeSink:
         except Exception as e:
             _log.warning("Lattice publish_pilot failed for %s: %s", entity_id, e)
 
-    def publish_home(self, entity_base_id: str, lat: float, lon: float) -> None:
+    def publish_home(self, entity_base_id: str, lat: float, lon: float, extra=None, **kwargs) -> None:
+        """
+        Publish/refresh the home point entity.
+
+        Back-compat: optional 4th positional arg:
+          - str   -> display name (aliases.name)
+          - number -> altitude HAE (meters)
+
+        Also supports keywords:
+          name= / display_name=  -> display name
+          altitude= / hae=       -> altitude HAE (meters)
+        """
         if not self._rate_ok("home"):
             return
         if not _valid_latlon(lat, lon):
             return
 
-        entity_id = f"{entity_base_id}-home"
-        alias_name = f"Home of {entity_base_id}"
-        location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
-        ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Home Point")
+        alias_name = kwargs.get("display_name") or kwargs.get("name") or f"Home of {entity_base_id}"
+        hae = kwargs.get("altitude", kwargs.get("hae"))
 
+        if isinstance(extra, str):
+            alias_name = extra
+        elif extra is not None and hae is None:
+            try:
+                hae = float(extra)
+            except Exception:
+                pass
+
+        entity_id = f"{entity_base_id}-home"
+        location = Location(position=Position(latitude_degrees=float(lat), longitude_degrees=float(lon)))
+        try:
+            if hae is not None:
+                location.position.height_above_ellipsoid_meters = float(hae)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        ontology = Ontology(template="TEMPLATE_TRACK", platform_type="Home Point")
         # OMIT environment; rely on server defaults
         mil_view = MilView(disposition="DISPOSITION_FRIEND")
 
@@ -380,7 +434,7 @@ class LatticeSink:
                 ontology=ontology,
                 mil_view=mil_view,
                 provenance=provenance,
-                aliases=Aliases(name=alias_name),
+                aliases=Aliases(name=str(alias_name)),
                 expiry_time=expiry_time,
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
