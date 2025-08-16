@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2025 cemaxecuter
+# Copyright (c) 2024 cemaxecuter
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -46,7 +46,6 @@ try:
     )
     # Optional enum (names differ across SDKs; we only use it for AIR)
     try:
-        # Most SDKs expose Environment enum like this:
         from anduril.entities.types.mil_view import Environment as MilEnvironment  # type: ignore
     except Exception:
         MilEnvironment = None  # type: ignore
@@ -199,7 +198,7 @@ class LatticeSink:
     # ───────────────────────────── WarDragon (ground sensor) ───────────────────────
     def publish_system(self, s: Dict[str, Any]) -> None:
         """
-        Publish WarDragon ground-sensor status as a track + health.
+        Publish WarDragon ground-sensor status as a track + health text.
         NOTE: We OMIT MilView.environment to rely on server defaults.
         """
         if not self._rate_ok("wd"):
@@ -229,7 +228,7 @@ class LatticeSink:
         # Keep disposition NEUTRAL, omit environment (enum differences across sandboxes)
         mil_view = MilView(disposition="DISPOSITION_NEUTRAL")
 
-        # ---- Build health/status from system_stats if present ----
+        # ---- Build health/status from system_stats if present (TEXT-ONLY, no enums) ----
         stats = (s.get("system_stats") or {})
         mem = (stats.get("memory") or {})
         disk = (stats.get("disk") or {})
@@ -265,112 +264,97 @@ class LatticeSink:
         pluto_temp = _parse_temp(temps.get("pluto_temp"))
         zynq_temp = _parse_temp(temps.get("zynq_temp"))
 
-        # Compute severity (0 OK, 1 WARN, 2 CRIT)
-        sev = 0
+        # Build a short roll-up line (no enums)
+        parts = [f"CPU {cpu:.0f}%"]
+        if mem_used_pct is not None:
+            parts.append(f"Mem {mem_used_pct:.0f}%")
+        if disk_used_pct is not None:
+            parts.append(f"Disk {disk_used_pct:.0f}%")
+        if box_temp:
+            parts.append(f"T {box_temp:.0f}°C")
+        if pluto_temp is not None:
+            parts.append(f"Pluto {pluto_temp:.0f}°C")
+        if zynq_temp is not None:
+            parts.append(f"Zynq {zynq_temp:.0f}°C")
+        if uptime_s:
+            parts.append(f"Up {uptime_s/3600:.1f}h")
+        status_msg = " | ".join(parts) if parts else "OK"
 
+        # Compose a description that shows in the UI
+        description = f"{alias_name} — {status_msg}"
+
+        # status {code,message} is commonly accepted; use a soft heuristic code
+        # (no enum here, just int). 0=OK,1=Warn,2=Crit (based on CPU/mem/disk/temp).
+        sev = 0
         def bump(level):
             nonlocal sev
             sev = max(sev, level)
 
         if cpu >= 90: bump(2)
         elif cpu >= 75: bump(1)
-
         if mem_used_pct is not None:
             if mem_used_pct >= 90: bump(2)
             elif mem_used_pct >= 80: bump(1)
-
         if disk_used_pct is not None:
             if disk_used_pct >= 95: bump(2)
             elif disk_used_pct >= 85: bump(1)
-
-        if box_temp:
-            if box_temp >= 85: bump(2)
-            elif box_temp >= 75: bump(1)
-        for t in (pluto_temp, zynq_temp):
+        for t in (box_temp, pluto_temp, zynq_temp):
             if t is not None:
                 if t >= 85: bump(2)
                 elif t >= 75: bump(1)
 
-        health_status = "HEALTH_STATUS_OK" if sev == 0 else ("HEALTH_STATUS_WARNING" if sev == 1 else "HEALTH_STATUS_CRITICAL")
-        status_msg_parts = [f"CPU {cpu:.0f}%"]
-        if mem_used_pct is not None:
-            status_msg_parts.append(f"Mem {mem_used_pct:.0f}%")
-        if disk_used_pct is not None:
-            status_msg_parts.append(f"Disk {disk_used_pct:.0f}%")
-        if box_temp:
-            status_msg_parts.append(f"T {box_temp:.0f}°C")
-        if pluto_temp is not None:
-            status_msg_parts.append(f"Pluto {pluto_temp:.0f}°C")
-        if zynq_temp is not None:
-            status_msg_parts.append(f"Zynq {zynq_temp:.0f}°C")
-        if uptime_s:
-            status_msg_parts.append(f"Up {uptime_s/3600:.1f}h")
-        status_msg = " | ".join(status_msg_parts) if status_msg_parts else "OK"
-
-        # Compose a short description that always shows in the UI
-        description = f"{alias_name} — {status_msg}"
-
-        # status {code,message} is commonly accepted
         status_payload = {"code": int(sev), "message": status_msg}
 
+        # TEXT-ONLY health (no enum fields: no connectionStatus, no healthStatus, no per-component health/status)
         now_iso = _now_utc().isoformat()
         components = [
             {
                 "id": "cpu",
                 "name": "CPU",
-                "health": "HEALTH_STATUS_OK" if cpu < 75 else ("HEALTH_STATUS_WARNING" if cpu < 90 else "HEALTH_STATUS_CRITICAL"),
-                "messages": [{"status": health_status, "message": f"Usage {cpu:.0f}%"}],
+                "messages": [{"message": f"Usage {cpu:.0f}%"}],
                 "updateTime": now_iso,
             },
         ]
-
         if mem_used_pct is not None:
             components.append({
                 "id": "memory",
                 "name": "Memory",
-                "health": "HEALTH_STATUS_OK" if mem_used_pct < 80 else ("HEALTH_STATUS_WARNING" if mem_used_pct < 90 else "HEALTH_STATUS_CRITICAL"),
-                "messages": [{"status": health_status, "message": f"Used {mem_used_pct:.0f}%"}],
+                "messages": [{"message": f"Used {mem_used_pct:.0f}%"}],
                 "updateTime": now_iso,
             })
         if disk_used_pct is not None:
             components.append({
                 "id": "disk",
                 "name": "Disk",
-                "health": "HEALTH_STATUS_OK" if disk_used_pct < 85 else ("HEALTH_STATUS_WARNING" if disk_used_pct < 95 else "HEALTH_STATUS_CRITICAL"),
-                "messages": [{"status": health_status, "message": f"Used {disk_used_pct:.0f}%"}],
+                "messages": [{"message": f"Used {disk_used_pct:.0f}%"}],
                 "updateTime": now_iso,
             })
         if box_temp:
             components.append({
                 "id": "chassis_temp",
                 "name": "Chassis Temp",
-                "health": "HEALTH_STATUS_OK" if box_temp < 75 else ("HEALTH_STATUS_WARNING" if box_temp < 85 else "HEALTH_STATUS_CRITICAL"),
-                "messages": [{"status": health_status, "message": f"{box_temp:.0f}°C"}],
+                "messages": [{"message": f"{box_temp:.0f}°C"}],
                 "updateTime": now_iso,
             })
         if pluto_temp is not None:
             components.append({
                 "id": "pluto_temp",
                 "name": "Pluto SDR Temp",
-                "health": "HEALTH_STATUS_OK" if pluto_temp < 75 else ("HEALTH_STATUS_WARNING" if pluto_temp < 85 else "HEALTH_STATUS_CRITICAL"),
-                "messages": [{"status": health_status, "message": f"{pluto_temp:.0f}°C"}],
+                "messages": [{"message": f"{pluto_temp:.0f}°C"}],
                 "updateTime": now_iso,
             })
         if zynq_temp is not None:
             components.append({
                 "id": "zynq_temp",
                 "name": "Zynq Temp",
-                "health": "HEALTH_STATUS_OK" if zynq_temp < 75 else ("HEALTH_STATUS_WARNING" if zynq_temp < 85 else "HEALTH_STATUS_CRITICAL"),
-                "messages": [{"status": health_status, "message": f"{zynq_temp:.0f}°C"}],
+                "messages": [{"message": f"{zynq_temp:.0f}°C"}],
                 "updateTime": now_iso,
             })
 
         health_payload = {
-            "connectionStatus": "CONNECTION_STATUS_CONNECTED",
-            "healthStatus": health_status,
             "components": components,
             "updateTime": now_iso,
-            # activeAlerts intentionally omitted for now (enum strictness varies)
+            # activeAlerts omitted for now
         }
 
         provenance = Provenance(
@@ -382,7 +366,7 @@ class LatticeSink:
         aliases = Aliases(name=alias_name)
         expiry_time = _now_utc() + dt.timedelta(minutes=10)
 
-        # Try with rich fields; fall back to minimal if rejected
+        # Try with rich fields; if this sandbox build still dislikes health, we'll still fall back.
         try:
             self.client.entities.publish_entity(
                 entity_id=entity_id,
@@ -393,9 +377,9 @@ class LatticeSink:
                 provenance=provenance,
                 aliases=aliases,
                 expiry_time=expiry_time,
-                description=description,       # optional in some SDKs
-                status=status_payload,         # optional but widely supported
-                health=health_payload,         # may be rejected depending on enums/build
+                description=description,
+                status=status_payload,
+                health=health_payload,
                 data_classification=Classification(
                     default=ClassificationInformation(level="CLASSIFICATION_LEVELS_UNCLASSIFIED")
                 ),
@@ -486,8 +470,6 @@ class LatticeSink:
         runtime = g("runtime")
 
         desc_parts = []
-        # Prefer a concise, useful description for the UI.
-        # Only include fields that are actually present.
         if id_type:
             desc_parts.append(f"ID:{id_type}")
         if ua_type_name or ua_type is not None:
