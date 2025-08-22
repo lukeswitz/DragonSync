@@ -8,7 +8,7 @@ Type=simple
 User=root
 WorkingDirectory=/home/dragon/WarDragon/DroneID
 
-ExecStart=/home/dragon/WarDragon/DroneID/.venv/bin/python /home/dragon/WarDragon/DroneID/wifi_receiver.py -z -g --zmqsetting 0.0.0.0:4223
+ExecStart=/home/dragon/WarDragon/DroneID/.venv/bin/python /home/dragon/WarDragon/DroneID/wifi_receiver.py -z -g --zmqsetting 127.0.0.1:4223
 
 Environment="PATH=/home/dragon/WarDragon/DroneID/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
