@@ -10,12 +10,6 @@ WorkingDirectory=/home/dragon/WarDragon/DroneID
 
 ExecStart=/home/dragon/WarDragon/DroneID/.venv/bin/python /home/dragon/WarDragon/DroneID/wifi_receiver.py -z -g --zmqsetting 0.0.0.0:4223
 
-# Limit the effective capability set for the service even as root
-CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
-
-# With root, it's fine to harden:
-NoNewPrivileges=true
-
 Environment="PATH=/home/dragon/WarDragon/DroneID/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 Restart=always
