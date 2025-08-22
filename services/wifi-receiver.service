@@ -1,0 +1,23 @@
+[Unit]
+Description=WiFi Receiver Service (OpenDroneID)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dragon
+WorkingDirectory=/home/dragon/WarDragon/DroneID
+ExecStart=/home/dragon/WarDragon/DroneID/.venv/bin/python /home/dragon/WarDragon/DroneID/wifi_receiver.py -z -g --zmqsetting 0.0.0.0:4223
+Restart=always
+RestartSec=3
+
+# Provide only the caps needed so no password prompt and no full-root
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+NoNewPrivileges=true
+
+# Ensure venv bin is first
+Environment="PATH=/home/dragon/WarDragon/DroneID/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+
+[Install]
+WantedBy=multi-user.target
