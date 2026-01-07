@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Copyright 2025 cemaxecuter
+Copyright 2025-2026 CEMAXECUTER LLC.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -56,6 +56,8 @@ from utils import load_config, validate_config, get_str, get_int, get_float, get
 from telemetry_parser import parse_drone_info
 from aircraft import adsb_worker_loop
 from kismet_ingest import start_kismet_worker
+from signal_ingest import start_signal_worker
+from signal_manager import SignalManager
 import logging
 logger = logging.getLogger(__name__)
 
@@ -332,14 +334,6 @@ def zmq_to_cot(
     enable_receive: bool = False,
     lattice_sink: Optional[object] = None,
     mqtt_sink: Optional[object] = None,
-    adsb_enabled=False,
-    adsb_json_url=None,
-    adsb_uid_prefix="adsb-",
-    adsb_cot_stale=15.0,
-    adsb_rate_limit=3.0,
-    adsb_min_alt=0,
-    adsb_max_alt=0,
-    adsb_cache_ttl=120.0,
 ):
     """Main function to convert ZMQ messages to CoT and send to TAK server."""
     global KIT_ID
@@ -431,6 +425,15 @@ def zmq_to_cot(
     adsb_stop = threading.Event()
     adsb_thread = None
 
+    adsb_enabled = config.get("adsb_enabled", False)
+    adsb_json_url = config.get("adsb_json_url")
+    adsb_uid_prefix = config.get("adsb_uid_prefix", "adsb-")
+    adsb_cot_stale = config.get("adsb_cot_stale", 15.0)
+    adsb_rate_limit = config.get("adsb_rate_limit", 3.0)
+    adsb_min_alt = config.get("adsb_min_alt", 0)
+    adsb_max_alt = config.get("adsb_max_alt", 0)
+    adsb_cache_ttl = config.get("adsb_cache_ttl", 120.0)
+
     if adsb_enabled and adsb_json_url:
         try:
             logger.info(f"ADS-B enabled; starting worker for {adsb_json_url}")
@@ -459,6 +462,34 @@ def zmq_to_cot(
     else:
         logger.info("ADS-B ingestion disabled or adsb_json_url not set; skipping ADS-B worker.")
 
+    # ---- Optional FPV signal ingest (ZMQ 4226) ----
+    signal_manager = SignalManager(
+        ttl_s=config.get("fpv_stale", 60.0),
+        max_signals=config.get("fpv_max_signals", 200),
+    )
+    signal_thread = None
+    signal_stop = None
+    if config.get("fpv_enabled"):
+        try:
+            signal_thread, signal_stop = start_signal_worker(
+                zmq_host=config.get("fpv_zmq_host", "127.0.0.1"),
+                zmq_port=int(config.get("fpv_zmq_port", 4226)),
+                cot_messenger=cot_messenger,
+                signal_manager=signal_manager,
+                stale_s=float(config.get("fpv_stale", 60.0)),
+                radius_m=float(config.get("fpv_radius_m", 15.0)),
+                min_send_interval=float(config.get("fpv_rate_limit", 2.0)),
+                confirm_only=bool(config.get("fpv_confirm_only", True)),
+                seen_by_provider=lambda: KIT_ID,
+                system_status_provider=lambda: system_status_latest,
+            )
+            logger.info("FPV signal ingest enabled.")
+        except Exception as e:
+            logger.warning("Failed to start FPV signal ingest: %s", e)
+            signal_thread, signal_stop = None, None
+    else:
+        logger.info("FPV signal ingest disabled; set fpv_enabled=true to enable.")
+
     # Start API server (read-only) to expose status and tracks
     api_server = None
     api_thread = None
@@ -470,6 +501,7 @@ def zmq_to_cot(
             api_port = int(env_port) if env_port is not None else int(config.get("api_port", 8088))
             api_server = serve_api(
                 manager=drone_manager,
+                signal_manager=signal_manager,
                 system_status_provider=lambda: system_status_latest,
                 kit_id_provider=lambda: KIT_ID,
                 config_provider=_sanitized_config,
@@ -520,6 +552,13 @@ def zmq_to_cot(
                 kismet_stop.set()
                 if kismet_thread and kismet_thread.is_alive():
                     kismet_thread.join(timeout=2.0)
+        except Exception:
+            pass
+        try:
+            if signal_stop:
+                signal_stop.set()
+                if signal_thread and signal_thread.is_alive():
+                    signal_thread.join(timeout=2.0)
         except Exception:
             pass
         try:
@@ -991,6 +1030,17 @@ if __name__ == "__main__":
         "adsb_rate_limit": get_float(config_values.get("adsb_rate_limit", 3.0)),
         "adsb_min_alt": get_int(config_values.get("adsb_min_alt", 0)),
         "adsb_max_alt": get_int(config_values.get("adsb_max_alt", 0)),
+
+        # ---- FPV signal ingest (optional) ----
+        "fpv_enabled": get_bool(config_values.get("fpv_enabled"), False),
+        "fpv_zmq_host": get_str(config_values.get("fpv_zmq_host", "127.0.0.1")),
+        "fpv_zmq_port": get_int(config_values.get("fpv_zmq_port", 4226)),
+        "fpv_stale": get_float(config_values.get("fpv_stale", 60.0)),
+        "fpv_radius_m": get_float(config_values.get("fpv_radius_m", 15.0)),
+        "fpv_rate_limit": get_float(config_values.get("fpv_rate_limit", 2.0)),
+        "fpv_max_signals": get_int(config_values.get("fpv_max_signals", 200)),
+        "fpv_confirm_only": get_bool(config_values.get("fpv_confirm_only", True)),
+
         # FAA RID API fallback (disabled by default; local DB still used)
         "rid_api_enabled": get_bool(config_values.get("rid_api_enabled"), False),
     }
@@ -1055,6 +1105,16 @@ if __name__ == "__main__":
                 "rate_limit": config.get("adsb_rate_limit"),
                 "min_alt": config.get("adsb_min_alt"),
                 "max_alt": config.get("adsb_max_alt"),
+            }
+            cfg["fpv"] = {
+                "enabled": bool(config.get("fpv_enabled")),
+                "zmq_host": config.get("fpv_zmq_host"),
+                "zmq_port": config.get("fpv_zmq_port"),
+                "stale": config.get("fpv_stale"),
+                "radius_m": config.get("fpv_radius_m"),
+                "rate_limit": config.get("fpv_rate_limit"),
+                "max_signals": config.get("fpv_max_signals"),
+                "confirm_only": bool(config.get("fpv_confirm_only")),
             }
             cfg["lattice"] = {
                 "enabled": bool(config.get("lattice_enabled")),
@@ -1164,12 +1224,4 @@ if __name__ == "__main__":
         enable_receive=config["enable_receive"],
         lattice_sink=lattice_sink,
         mqtt_sink=mqtt_sink,
-        adsb_enabled=config["adsb_enabled"],
-        adsb_json_url=config["adsb_json_url"],
-        adsb_uid_prefix=config["adsb_uid_prefix"],
-        adsb_cot_stale=config["adsb_cot_stale"],
-        adsb_cache_ttl=config["adsb_cache_ttl"],
-        adsb_rate_limit=config["adsb_rate_limit"],
-        adsb_min_alt=config["adsb_min_alt"],
-        adsb_max_alt=config["adsb_max_alt"],
     )

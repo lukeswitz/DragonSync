@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Copyright 2025 cemaxecuter
+Copyright 2025-2026 CEMAXECUTER LLC.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -339,7 +339,9 @@ def adsb_worker_loop(
             if lat is None or lon is None:
                 continue
 
-            alt = craft.get("alt_geom") or craft.get("alt_baro")
+            alt = craft.get("alt_geom")
+            if alt is None:
+                alt = craft.get("alt_baro")
             if min_alt and (alt is None or alt < min_alt):
                 continue
             if max_alt and alt is not None and alt > max_alt:
